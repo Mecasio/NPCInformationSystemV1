@@ -59,11 +59,11 @@ const applicantDocsDir = path.join(
 
 const allowedOrigins = [
   "http://localhost:5173",
-  "http://192.168.50.43:5173",
+  "http://192.168.0.180:5173",
   "http://192.168.50.55:5173",
   "http://192.168.50.211:5173",
   "http://136.239.248.62:5173",
-  "http://192.168.50.43:5173",
+  "http://192.168.0.180:5173",
   "http://192.168.1.9:5173",
 ];
 
@@ -2449,6 +2449,8 @@ const buildAuditEventMessage = async (req) => {
   const preparedByEmployeeId = details.prepared_by_employee_id || "N/A";
   const applicantName = details.applicant_name || "Unknown Applicant";
   const applicantNumber = details.applicant_number || "N/A";
+  const searchedStudentName = details.student_name || "Unknown Student";
+  const searchedStudentNumber = details.student_number || "N/A";
 
   const events = {
     grade_conversion_saved: {
@@ -2530,6 +2532,14 @@ const buildAuditEventMessage = async (req) => {
     examination_profile_prepared_by_set: {
       type: "update",
       message: `${actorNameWithId} set ${preparedByName} (${preparedByEmployeeId}) as a campus administrator in examination profile of ${applicantName} (${applicantNumber})`,
+    },
+    student_cor_searched: {
+      type: "search",
+      message: `${actorNameWithId} searched the certificate of registration of student ${searchedStudentName} (${searchedStudentNumber})`,
+    },
+    student_basic_info_searched: {
+      type: "search",
+      message: `${actorNameWithId} searched the basic information of student ${searchedStudentName} (${searchedStudentNumber}).`,
     },
   };
 

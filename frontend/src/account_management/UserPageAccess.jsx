@@ -66,6 +66,8 @@ const UserPageAccess = () => {
   const [editAccessDescription, setEditAccessDescription] = useState("");
   const [editPageAccess, setEditPageAccess] = useState({});
   const [editPages, setEditPages] = useState([]);
+  const [createAccessSearch, setCreateAccessSearch] = useState("");
+  const [editAccessSearch, setEditAccessSearch] = useState("");
 
   const [snack, setSnack] = useState({
     open: false,
@@ -255,6 +257,24 @@ const UserPageAccess = () => {
         can_delete: permissions.can_delete ? 1 : 0,
       }));
 
+  const filterPagesForAccessModal = (pagesList, query) => {
+    const words = query.trim().toLowerCase().split(" ").filter(Boolean);
+    if (words.length === 0) return pagesList;
+
+    return pagesList.filter((page) => {
+      const searchableText = [
+        page.id,
+        page.page_description,
+        page.page_group,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return words.every((word) => searchableText.includes(word));
+    });
+  };
+
   const filteredUsers = allUsers.filter((u) => {
     const q = searchQuery.toLowerCase();
     const fullName =
@@ -270,6 +290,14 @@ const UserPageAccess = () => {
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const filteredCreatePages = filterPagesForAccessModal(
+    createPages,
+    createAccessSearch,
+  );
+  const filteredEditPages = filterPagesForAccessModal(
+    editPages,
+    editAccessSearch,
+  );
 
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
@@ -397,6 +425,7 @@ const UserPageAccess = () => {
       setCreatePages(pagesData);
       setCreatePageAccess(defaultAccess);
       setAccessDescription("");
+      setCreateAccessSearch("");
       setOpenCreateModal(true);
     } catch (err) {
       console.error(err);
@@ -420,6 +449,7 @@ const UserPageAccess = () => {
       setEditPageAccess(defaultAccess);
       setEditAccessId("");
       setEditAccessDescription("");
+      setEditAccessSearch("");
       setOpenEditAccessModal(true);
     } catch (err) {
       console.error(err);
@@ -1581,7 +1611,10 @@ const UserPageAccess = () => {
 
       <Dialog
         open={openCreateModal}
-        onClose={() => setOpenCreateModal(false)}
+        onClose={() => {
+          setOpenCreateModal(false);
+          setCreateAccessSearch("");
+        }}
         maxWidth="lg"
         fullWidth
       >
@@ -1608,6 +1641,18 @@ const UserPageAccess = () => {
               Assign All
             </Button>
           </Box>
+
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="Search Page Description / Group / ID"
+            value={createAccessSearch}
+            onChange={(e) => setCreateAccessSearch(e.target.value)}
+            sx={{ mb: 2 }}
+            InputProps={{
+              startAdornment: <SearchIcon sx={{ mr: 1, color: "gray" }} />,
+            }}
+          />
 
           <Paper sx={{ border: `1px solid ${borderColor}` }}>
             <TableContainer>
@@ -1683,7 +1728,7 @@ const UserPageAccess = () => {
                 </TableHead>
 
                 <TableBody>
-                  {createPages.map((p, i) => (
+                  {filteredCreatePages.map((p, i) => (
                     <TableRow key={p.id}>
                       <TableCell align="center">{i + 1}</TableCell>
                       <TableCell align="center">{p.page_description}</TableCell>
@@ -1723,6 +1768,13 @@ const UserPageAccess = () => {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {filteredCreatePages.length === 0 && (
+                    <TableRow>
+                      <TableCell align="center" colSpan={7}>
+                        No pages found.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -1733,7 +1785,10 @@ const UserPageAccess = () => {
           <Button
             color="error"
             variant="outlined"
-            onClick={() => setOpenCreateModal(false)}
+            onClick={() => {
+              setOpenCreateModal(false);
+              setCreateAccessSearch("");
+            }}
           >
             Cancel
           </Button>
@@ -1754,7 +1809,10 @@ const UserPageAccess = () => {
 
       <Dialog
         open={openEditAccessModal}
-        onClose={() => setOpenEditAccessModal(false)}
+        onClose={() => {
+          setOpenEditAccessModal(false);
+          setEditAccessSearch("");
+        }}
         maxWidth="lg"
         fullWidth
       >
@@ -1787,6 +1845,19 @@ const UserPageAccess = () => {
             onChange={(e) => setEditAccessDescription(e.target.value)}
             sx={{ mb: 3 }}
             disabled={!editAccessId}
+          />
+
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="Search Page Description / Group / ID"
+            value={editAccessSearch}
+            onChange={(e) => setEditAccessSearch(e.target.value)}
+            disabled={!editAccessId}
+            sx={{ mb: 2 }}
+            InputProps={{
+              startAdornment: <SearchIcon sx={{ mr: 1, color: "gray" }} />,
+            }}
           />
 
           <Box display="flex" gap={2} mb={2}>
@@ -1882,7 +1953,7 @@ const UserPageAccess = () => {
                 </TableHead>
 
                 <TableBody>
-                  {editPages.map((p, i) => (
+                  {filteredEditPages.map((p, i) => (
                     <TableRow key={p.id}>
                       <TableCell align="center">{i + 1}</TableCell>
                       <TableCell align="center">{p.page_description}</TableCell>
@@ -1923,6 +1994,13 @@ const UserPageAccess = () => {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {filteredEditPages.length === 0 && (
+                    <TableRow>
+                      <TableCell align="center" colSpan={7}>
+                        No pages found.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -1933,7 +2011,10 @@ const UserPageAccess = () => {
           <Button
             color="error"
             variant="outlined"
-            onClick={() => setOpenEditAccessModal(false)}
+            onClick={() => {
+              setOpenEditAccessModal(false);
+              setEditAccessSearch("");
+            }}
           >
             Cancel
           </Button>

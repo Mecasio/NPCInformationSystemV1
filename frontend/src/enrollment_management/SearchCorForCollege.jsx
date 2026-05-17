@@ -35,6 +35,31 @@ import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import PersonSearchIcon from "@mui/icons-material/PersonSearch";
 import PersonIcon from "@mui/icons-material/Person";
+import { postAuditEvent } from "../utils/auditEvents";
+
+const cleanAuditValue = (value) => {
+    if (value === null || value === undefined) return "";
+    const text = String(value).trim();
+    return ["null", "undefined"].includes(text.toLowerCase()) ? "" : text;
+};
+
+const formatStudentAuditName = (student) =>
+    [
+        cleanAuditValue(student?.first_name),
+        cleanAuditValue(student?.middle_name),
+        cleanAuditValue(student?.last_name),
+    ].filter(Boolean).join(" ") || "Unknown Student";
+
+const logCorSearchAudit = async (student, fallbackStudentNumber) => {
+    try {
+        await postAuditEvent("student_cor_searched", {
+            student_name: formatStudentAuditName(student),
+            student_number: cleanAuditValue(student?.student_number) || cleanAuditValue(fallbackStudentNumber) || "N/A",
+        });
+    } catch (err) {
+        console.error("COR search audit failed:", err);
+    }
+};
 
 const SearchCorForCollege = () => {
     const settings = useContext(SettingsContext);
@@ -284,6 +309,7 @@ const SearchCorForCollege = () => {
                 if (data) {
                     setSelectedStudent(data);
                     setStudentData(data);
+                    await logCorSearchAudit(data, debouncedStudentNumber);
                     showSnackbar("Student found successfully.", "success");
 
                     const detailsRes = await fetch(`${API_BASE_URL}/api/program_evaluation/details/${debouncedStudentNumber}`);

@@ -45,6 +45,7 @@ import AddIcon from "@mui/icons-material/Add";
 import API_BASE_URL from "../apiConfig";
 import { useNavigate } from "react-router-dom";
 import ScoreIcon from "@mui/icons-material/Score";
+import { postAuditEvent } from "../utils/auditEvents";
 
 /* ─── Design tokens ─── */
 const TOKEN = {
@@ -148,6 +149,48 @@ const StyledTd = ({ children, sx = {}, ...rest }) => (
 );
 
 /* ─── Main component ─── */
+const isBlankValue = (value) =>
+  value === null ||
+  value === undefined ||
+  String(value).trim() === "" ||
+  ["null", "undefined"].includes(String(value).trim().toLowerCase());
+
+const cleanDisplayValue = (value, fallback = "") =>
+  isBlankValue(value) ? fallback : String(value).trim();
+
+const joinDisplayValues = (...values) =>
+  values.map((value) => cleanDisplayValue(value)).filter(Boolean).join(" ");
+
+const setStorageValue = (key, value) => {
+  if (isBlankValue(value)) localStorage.removeItem(key);
+  else localStorage.setItem(key, value);
+};
+
+const formatStudentProgram = (courseCode, courseDescription, sectionDescription) => {
+  const code = cleanDisplayValue(courseCode);
+  const description = cleanDisplayValue(courseDescription);
+  const section = cleanDisplayValue(sectionDescription);
+  const program = joinDisplayValues(code ? `(${code})` : "", description);
+  return [program, section].filter(Boolean).join(" · ");
+};
+
+const formatSection = (programCode, description) =>
+  [cleanDisplayValue(programCode), cleanDisplayValue(description)].filter(Boolean).join("-");
+
+const formatTimeRange = (start, end) =>
+  [cleanDisplayValue(start), cleanDisplayValue(end)].filter(Boolean).join("–");
+
+const logStudentBasicInfoSearch = async ({ studentNumber, firstName, middleName, lastName }) => {
+  try {
+    await postAuditEvent("student_basic_info_searched", {
+      student_name: joinDisplayValues(firstName, middleName, lastName) || "Unknown Student",
+      student_number: cleanDisplayValue(studentNumber, "N/A"),
+    });
+  } catch (err) {
+    console.error("Student search audit failed:", err);
+  }
+};
+
 const CourseTaggingForSummer = () => {
   const settings = useContext(SettingsContext);
   const theme = useTheme();
@@ -453,8 +496,8 @@ const CourseTaggingForSummer = () => {
       const courseRes = await axios.get(`${API_BASE_URL}/api/search-student/${sectionId}`);
       if (courseRes.data.length > 0) {
         setCurr(courseRes.data[0].curriculum_id);
-        setCourseCode(courseRes.data[0].program_code);
-        setCourseDescription(courseRes.data[0].program_description);
+        setCourseCode(cleanDisplayValue(courseRes.data[0].program_code));
+        setCourseDescription(cleanDisplayValue(courseRes.data[0].program_description));
       }
     } catch (error) {
       console.error("Error updating curriculum:", error);
@@ -566,7 +609,7 @@ const CourseTaggingForSummer = () => {
       );
       const { data } = await axios.get(`${API_BASE_URL}/enrolled_courses/${userId}/${currId}`, { params: { activeSchoolYearId } });
       setEnrolled(data);
-      if (data.length > 0) { setCourseCode(data[0].program_code); setCourseDescription(data[0].program_description); setSectionDescription(data[0].section); }
+      if (data.length > 0) { setCourseCode(cleanDisplayValue(data[0].program_code)); setCourseDescription(cleanDisplayValue(data[0].program_description)); setSectionDescription(cleanDisplayValue(data[0].section)); }
       setSnack({ open: true, message: enrolledCount > 0 ? "Bulk enroll finished. All available subjects were enrolled." : "No new subjects were enrolled.", severity: enrolledCount > 0 ? "success" : "info" });
     } catch (err) {
       console.error("Unexpected error during enrollment:", err);
@@ -595,12 +638,25 @@ const CourseTaggingForSummer = () => {
         { headers: { "Content-Type": "application/json" } }
       );
       const { token2, isEnrolled, person_id2, studentNumber: studentNum, section, activeCurriculum: effectiveProgram, yearLevel, courseCode: courseCode, courseDescription: courseDescription, firstName: first_name, middleName: middle_name, lastName: last_name, applyingAs: applyingAsValue } = response.data;
-      localStorage.setItem("token2", token2); localStorage.setItem("person_id2", person_id2); localStorage.setItem("studentNumber", studentNum); localStorage.setItem("activeCurriculum", effectiveProgram); localStorage.setItem("yearLevel", yearLevel); localStorage.setItem("courseCode", courseCode); localStorage.setItem("courseDescription", courseDescription); localStorage.setItem("firstName", first_name); localStorage.setItem("middleName", middle_name); localStorage.setItem("lastName", last_name); localStorage.setItem("section", section); localStorage.setItem("isEnrolled", isEnrolled);
-      setUserId(studentNum); setUserFirstName(first_name); setUserMiddleName(middle_name); setUserLastName(last_name); setApplyingAs(applyingAsValue ?? ""); setCurr(effectiveProgram); setCourseCode(courseCode); setCourseDescription(courseDescription); setPersonID(person_id2); setSectionDescription(section); setIsEnrolled(isEnrolled);
-      setSnack({ open: true, message: "Student found and authenticated!", severity: "success" });
+      setStorageValue("token2", token2); setStorageValue("person_id2", person_id2); setStorageValue("studentNumber", studentNum); setStorageValue("activeCurriculum", effectiveProgram); setStorageValue("yearLevel", yearLevel); setStorageValue("courseCode", courseCode); setStorageValue("courseDescription", courseDescription); setStorageValue("firstName", first_name); setStorageValue("middleName", middle_name); setStorageValue("lastName", last_name); setStorageValue("section", section); setStorageValue("isEnrolled", isEnrolled);
+      setUserId(cleanDisplayValue(studentNum)); setUserFirstName(cleanDisplayValue(first_name)); setUserMiddleName(cleanDisplayValue(middle_name)); setUserLastName(cleanDisplayValue(last_name)); setApplyingAs(cleanDisplayValue(applyingAsValue)); setCurr(cleanDisplayValue(effectiveProgram)); setCourseCode(cleanDisplayValue(courseCode)); setCourseDescription(cleanDisplayValue(courseDescription)); setPersonID(cleanDisplayValue(person_id2)); setSectionDescription(cleanDisplayValue(section)); setIsEnrolled(isEnrolled);
+      await logStudentBasicInfoSearch({ studentNumber: studentNum, firstName: first_name, middleName: middle_name, lastName: last_name });
+      const warned = await warnIfNoSummerSubjects(
+        effectiveProgram,
+        yearLevel,
+        joinDisplayValues(courseCode ? `(${courseCode})` : "", courseDescription),
+      );
+      if (!warned) {
+        setSnack({ open: true, message: "Student found and authenticated!", severity: "success" });
+      }
     } catch (error) {
       console.log("");
       setApplyingAs("");
+      setUserId(null);
+      setCurr(null);
+      setCourses([]);
+      setEnrolled([]);
+      setSectionDescription("");
       setSnack({ open: true, message: "Student not found or error processing request.", severity: "error" });
     }
   };
@@ -689,11 +745,46 @@ const CourseTaggingForSummer = () => {
     return map[semester] || semester;
   };
 
+  const warnIfNoSummerSubjects = async (curriculumId, yearLevelId, programLabel) => {
+    if (!curriculumId || !activeSemesterId) return false;
+
+    try {
+      const { data } = await axios.get(`${API_BASE_URL}/api/program-summer-subjects/check`, {
+        params: {
+          curriculum_id: curriculumId,
+          semester_id: activeSemesterId,
+          active_school_year_id: activeSchoolYearId,
+          year_level_id: yearLevelId,
+        },
+      });
+
+      if (!data.hasSummerSubjects) {
+        const programName = programLabel || data.programDescription || "this student's program";
+        setSnack({
+          open: true,
+          message: `${programName} has no dedicated Summer subjects tagged for the student's current year level.`,
+          severity: "warning",
+        });
+        return true;
+      }
+    } catch (err) {
+      console.error("Error checking summer subjects:", err);
+      setSnack({
+        open: true,
+        message: "Student found, but summer subject tagging could not be verified.",
+        severity: "warning",
+      });
+      return true;
+    }
+
+    return false;
+  };
+
   useEffect(() => {
     if (!studentNumber) return;
     const delayDebounce = setTimeout(() => { handleSearchStudent(); }, 500);
     return () => clearTimeout(delayDebounce);
-  }, [studentNumber]);
+  }, [studentNumber, activeSchoolYearId, activeSemesterId]);
 
   /* ── total units ── */
   const totalUnits =
@@ -890,12 +981,12 @@ const CourseTaggingForSummer = () => {
                 </Box>
                 <Box>
                   <Typography sx={{ fontWeight: 700, textAlign: "left", fontSize: "13px", color: headerColor, lineHeight: 1.2 }}>
-                    Name: {first_name} {middle_name} {last_name}
+                    Name: {joinDisplayValues(first_name, middle_name, last_name)}
                   </Typography>
                   <Typography sx={{ fontSize: "11px", color: TOKEN.textMid }}>
-                    {courseCode || courseDescription || sectionDescription
+                    {formatStudentProgram(courseCode, courseDescription, sectionDescription)
                       ? isenrolled
-                        ? `(${courseCode}) ${courseDescription} · ${sectionDescription}`
+                        ? formatStudentProgram(courseCode, courseDescription, sectionDescription)
                         : "Not currently enrolled"
                       : "—"}
                   </Typography>
@@ -1069,7 +1160,7 @@ const CourseTaggingForSummer = () => {
                 <MenuItem value=""><em>Select a department section</em></MenuItem>
                 {sections.map((section) => (
                   <MenuItem key={section.department_and_program_section_id} value={section.department_and_program_section_id} sx={{ fontSize: "13px" }}>
-                    <strong>({section.program_code})</strong>&nbsp;{section.program_description} {section.major || ""} — {section.description}
+                    <strong>{cleanDisplayValue(section.program_code) ? `(${cleanDisplayValue(section.program_code)})` : ""}</strong>&nbsp;{joinDisplayValues(section.program_description, section.major)}{cleanDisplayValue(section.description) ? ` — ${cleanDisplayValue(section.description)}` : ""}
                   </MenuItem>
                 ))}
               </TextField>
@@ -1145,11 +1236,11 @@ const CourseTaggingForSummer = () => {
                     <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{e.lec_unit}</StyledTd>
                     <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{e.lab_unit}</StyledTd>
                     <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{e.course_unit}</StyledTd>
-                    <StyledTd sx={{ whiteSpace: "nowrap", border: `1px solid ${borderColor}`, textAlign: "center" }}>{e.program_code}-{e.description}</StyledTd>
-                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{e.day_description}</StyledTd>
-                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{e.school_time_start}–{e.school_time_end}</StyledTd>
-                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{e.room_description}</StyledTd>
-                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>Prof. {e.lname}</StyledTd>
+                    <StyledTd sx={{ whiteSpace: "nowrap", border: `1px solid ${borderColor}`, textAlign: "center" }}>{formatSection(e.program_code, e.description) || "—"}</StyledTd>
+                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{cleanDisplayValue(e.day_description, "—")}</StyledTd>
+                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{formatTimeRange(e.school_time_start, e.school_time_end) || "—"}</StyledTd>
+                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{cleanDisplayValue(e.room_description, "—")}</StyledTd>
+                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{cleanDisplayValue(e.lname) ? `Prof. ${cleanDisplayValue(e.lname)}` : "—"}</StyledTd>
                     <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>
                       <Chip
                         label={e.number_of_enrolled}

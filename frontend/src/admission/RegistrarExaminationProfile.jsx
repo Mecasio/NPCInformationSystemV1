@@ -162,10 +162,17 @@ const ExaminationProfile = ({ personId }) => {
     axios
       .get(`${API_BASE_URL}/api/person_with_applicant/${personIdFromUrl}`)
       .then((res) => {
+        if (res.data?.person_id) {
+          setSelectedPerson(res.data);
+          setPerson((prev) => ({ ...prev, ...res.data }));
+          sessionStorage.setItem("admin_edit_person_id", res.data.person_id);
+        }
+
         if (res.data?.applicant_number) {
 
           // AUTO-INSERT applicant_number into search bar
           setSearchQuery(res.data.applicant_number);
+          setApplicantNumber(res.data.applicant_number);
 
           // If you have a fetchUploads() or fetchExamScore() — call it
           if (typeof fetchUploadsByApplicantNumber === "function") {
@@ -277,6 +284,7 @@ const ExaminationProfile = ({ personId }) => {
   const [selectedPreparedBy, setSelectedPreparedBy] = useState(null);
 
   const formatPersonName = (item) =>
+    item?.full_name ||
     [
       item?.first_name,
       item?.middle_name,
@@ -288,16 +296,16 @@ const ExaminationProfile = ({ personId }) => {
       .replace(/\s+/g, " ")
       .trim();
 
-  const handlePreparedByChange = async (user) => {
-    const isSelected = selectedPreparedBy?.employee_id === user.employee_id;
-    setSelectedPreparedBy(isSelected ? null : user);
+  const handlePreparedByChange = async (signature) => {
+    const isSelected = selectedPreparedBy?.id === signature.id;
+    setSelectedPreparedBy(isSelected ? null : signature);
 
     if (isSelected) return;
 
     try {
       await postAuditEvent("examination_profile_prepared_by_set", {
-        prepared_by_name: formatPersonName(user),
-        prepared_by_employee_id: user.employee_id || "N/A",
+        prepared_by_name: formatPersonName(signature),
+        prepared_by_employee_id: signature.employee_id || signature.id || "N/A",
         applicant_name: formatPersonName(selectedPerson || person),
         applicant_number:
           selectedPerson?.applicant_number || applicantNumber || "N/A",
@@ -532,73 +540,38 @@ const ExaminationProfile = ({ personId }) => {
     }, 200);
   };
 
-  const [registrars, setRegistrars] = useState([]);
-  const [registrarPage, setRegistrarPage] = useState(0);
-  const [selectedCheckedBy, setSelectedCheckedBy] = useState(null);
-  const REGISTRARS_PER_PAGE = 5;
-
-
-  const parsePageIds = (value) => {
-    if (!value) return [];
-
-    try {
-      const parsed = Array.isArray(value) ? value : JSON.parse(value);
-      return parsed
-        .map((entry) =>
-          Number(
-            typeof entry === "object" && entry !== null
-              ? entry.page_id ?? entry.pageId ?? entry.id
-              : entry,
-          ),
-        )
-        .filter((id) => Number.isInteger(id));
-    } catch (error) {
-      console.error("Failed to parse page access:", error);
-      return [];
-    }
-  };
+  const [signatures, setSignatures] = useState([]);
+  const [signaturePage, setSignaturePage] = useState(0);
+  const SIGNATURES_PER_PAGE = 5;
 
   useEffect(() => {
-    const fetchRegistrars = async () => {
+    const fetchSignatures = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/registrar-users`, {
-          params: { pageId },
-        });
-
-        const filteredRegistrars = (res.data.registrars || []).filter(
-          (user) => {
-            const accessTablePages = parsePageIds(user.access_page);
-            const assignedPageIds = Array.isArray(user.assigned_page_ids)
-              ? user.assigned_page_ids
-                .map((id) => Number(id))
-                .filter((id) => Number.isInteger(id))
-              : [];
-
-            return (
-              accessTablePages.includes(pageId) ||
-              assignedPageIds.includes(pageId)
-            );
-          },
-        );
-
-        setRegistrars(filteredRegistrars);
-        setRegistrarPage(0);
+        const res = await axios.get(`${API_BASE_URL}/api/signature`);
+        setSignatures(res.data?.success ? res.data.data || [] : []);
+        setSignaturePage(0);
       } catch (err) {
         console.error(err);
+        setSignatures([]);
       }
     };
-    fetchRegistrars();
-  }, [pageId]);
+    fetchSignatures();
+  }, []);
 
 
-  const paginatedRegistrars = registrars.slice(
-    registrarPage * REGISTRARS_PER_PAGE,
-    registrarPage * REGISTRARS_PER_PAGE + REGISTRARS_PER_PAGE,
+  const paginatedSignatures = signatures.slice(
+    signaturePage * SIGNATURES_PER_PAGE,
+    signaturePage * SIGNATURES_PER_PAGE + SIGNATURES_PER_PAGE,
   );
-  const totalRegistrarPages = Math.max(
+  const totalSignaturePages = Math.max(
     1,
-    Math.ceil(registrars.length / REGISTRARS_PER_PAGE),
+    Math.ceil(signatures.length / SIGNATURES_PER_PAGE),
   );
+
+  const getSignatureImageSrc = (signature) =>
+    signature?.signature_image
+      ? `${API_BASE_URL}/uploads/${signature.signature_image}`
+      : "";
 
 
   // Put this at the very bottom before the return 
@@ -644,10 +617,23 @@ const ExaminationProfile = ({ personId }) => {
 
         <Autocomplete
           options={persons}
-          getOptionLabel={(option) =>
-            `${option.applicant_number} - ${option.last_name}, ${option.first_name} ${option.middle_name || ""
-            } (${option.emailAddress})`
+          value={selectedPerson}
+          inputValue={searchQuery}
+          isOptionEqualToValue={(option, value) =>
+            option?.person_id === value?.person_id ||
+            option?.applicant_number === value?.applicant_number
           }
+          getOptionLabel={(option) =>
+            option
+              ? `${option.applicant_number || ""} - ${option.last_name || ""}, ${option.first_name || ""} ${option.middle_name || ""
+              } (${option.emailAddress || ""})`
+              : ""
+          }
+          onInputChange={(event, newInputValue, reason) => {
+            if (reason !== "reset") {
+              setSearchQuery(newInputValue);
+            }
+          }}
           filterOptions={(options, state) => {
             const query = state.inputValue.toLowerCase();
 
@@ -671,6 +657,12 @@ const ExaminationProfile = ({ personId }) => {
               fetchPersonData(newValue.person_id);
 
               setApplicantNumber(newValue.applicant_number);
+              setSearchQuery(newValue.applicant_number || "");
+              sessionStorage.setItem("admin_edit_person_id", newValue.person_id);
+            } else {
+              setSelectedPerson(null);
+              setApplicantNumber("");
+              setSearchQuery("");
             }
           }}
           renderInput={(params) => (
@@ -831,13 +823,13 @@ const ExaminationProfile = ({ personId }) => {
             }}
           >
             <Typography fontSize="14px" fontWeight="bold" color="white">
-              Total Registrar Users: {registrars.length}
+              Total Signatures: {signatures.length}
             </Typography>
 
             <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
               <Button
-                onClick={() => setRegistrarPage(0)}
-                disabled={registrarPage === 0}
+                onClick={() => setSignaturePage(0)}
+                disabled={signaturePage === 0}
                 variant="outlined"
                 size="small"
                 sx={{
@@ -862,9 +854,9 @@ const ExaminationProfile = ({ personId }) => {
 
               <Button
                 onClick={() =>
-                  setRegistrarPage((prev) => Math.max(prev - 1, 0))
+                  setSignaturePage((prev) => Math.max(prev - 1, 0))
                 }
-                disabled={registrarPage === 0}
+                disabled={signaturePage === 0}
                 variant="outlined"
                 size="small"
                 sx={{
@@ -889,8 +881,8 @@ const ExaminationProfile = ({ personId }) => {
 
               <FormControl size="small" sx={{ minWidth: 90 }}>
                 <Select
-                  value={registrarPage + 1}
-                  onChange={(e) => setRegistrarPage(Number(e.target.value) - 1)}
+                  value={signaturePage + 1}
+                  onChange={(e) => setSignaturePage(Number(e.target.value) - 1)}
                   displayEmpty
                   sx={{
                     fontSize: "12px",
@@ -920,7 +912,7 @@ const ExaminationProfile = ({ personId }) => {
                     },
                   }}
                 >
-                  {Array.from({ length: totalRegistrarPages }, (_, i) => (
+                  {Array.from({ length: totalSignaturePages }, (_, i) => (
                     <MenuItem key={i + 1} value={i + 1}>
                       Page {i + 1}
                     </MenuItem>
@@ -929,17 +921,17 @@ const ExaminationProfile = ({ personId }) => {
               </FormControl>
 
               <Typography fontSize="11px" color="white">
-                of {totalRegistrarPages} page
-                {totalRegistrarPages > 1 ? "s" : ""}
+                of {totalSignaturePages} page
+                {totalSignaturePages > 1 ? "s" : ""}
               </Typography>
 
               <Button
                 onClick={() =>
-                  setRegistrarPage((prev) =>
-                    Math.min(prev + 1, totalRegistrarPages - 1),
+                  setSignaturePage((prev) =>
+                    Math.min(prev + 1, totalSignaturePages - 1),
                   )
                 }
-                disabled={registrarPage >= totalRegistrarPages - 1}
+                disabled={signaturePage >= totalSignaturePages - 1}
                 variant="outlined"
                 size="small"
                 sx={{
@@ -963,8 +955,8 @@ const ExaminationProfile = ({ personId }) => {
               </Button>
 
               <Button
-                onClick={() => setRegistrarPage(totalRegistrarPages - 1)}
-                disabled={registrarPage >= totalRegistrarPages - 1}
+                onClick={() => setSignaturePage(totalSignaturePages - 1)}
+                disabled={signaturePage >= totalSignaturePages - 1}
                 variant="outlined"
                 size="small"
                 sx={{
@@ -1000,7 +992,7 @@ const ExaminationProfile = ({ personId }) => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  {["#", "Employee ID", "Fullname", "Role", "Action"].map((header) => (
+                  {["#", "Full Name", "Designation", "Prepared By"].map((header) => (
                     <TableCell
                       key={header}
                       sx={{
@@ -1019,8 +1011,8 @@ const ExaminationProfile = ({ personId }) => {
               </TableHead>
 
               <TableBody>
-                {paginatedRegistrars.map((user, index) => (
-                  <TableRow key={user.employee_id}>
+                {paginatedSignatures.map((signature, index) => (
+                  <TableRow key={signature.id}>
                     <TableCell
                       sx={{
                         border: `1px solid ${borderColor}`,
@@ -1030,7 +1022,7 @@ const ExaminationProfile = ({ personId }) => {
                         padding: "4px 8px",
                       }}
                     >
-                      {registrarPage * REGISTRARS_PER_PAGE + index + 1}
+                      {signaturePage * SIGNATURES_PER_PAGE + index + 1}
                     </TableCell>
 
                     <TableCell
@@ -1042,18 +1034,7 @@ const ExaminationProfile = ({ personId }) => {
                         padding: "4px 8px",
                       }}
                     >
-                      {user.employee_id}
-                    </TableCell>
-
-                    <TableCell
-                      sx={{
-                        border: `1px solid ${borderColor}`,
-                        color: titleColor,
-                        fontSize: "12px",
-                        padding: "4px 8px",
-                      }}
-                    >
-                      {`${user.first_name} ${user.middle_name || ""} ${user.last_name}`}
+                      {signature.full_name}
                     </TableCell>
 
                     <TableCell
@@ -1065,7 +1046,7 @@ const ExaminationProfile = ({ personId }) => {
                         padding: "4px 8px",
                       }}
                     >
-                      {user.role}
+                      {signature.designation}
                     </TableCell>
 
                     <TableCell
@@ -1085,12 +1066,9 @@ const ExaminationProfile = ({ personId }) => {
                           size="small"
                           color="primary"
                           checked={
-                            selectedPreparedBy?.employee_id === user.employee_id
+                            selectedPreparedBy?.id === signature.id
                           }
-                          onChange={() => handlePreparedByChange(user)}
-                          disabled={
-                            selectedCheckedBy?.employee_id === user.employee_id
-                          }
+                          onChange={() => handlePreparedByChange(signature)}
                         />
                         <Typography fontSize="12px">
                           Prepared By
@@ -1100,10 +1078,10 @@ const ExaminationProfile = ({ personId }) => {
                   </TableRow>
                 ))}
 
-                {paginatedRegistrars.length === 0 && (
+                {paginatedSignatures.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={4}
                       align="center"
                       sx={{
                         border: `1px solid ${borderColor}`,
@@ -1112,7 +1090,7 @@ const ExaminationProfile = ({ personId }) => {
                         fontSize: "12px",
                       }}
                     >
-                      No registrar users found.
+                      No signatures found.
                     </TableCell>
                   </TableRow>
                 )}
@@ -1134,13 +1112,13 @@ const ExaminationProfile = ({ personId }) => {
             }}
           >
             <Typography fontSize="14px" fontWeight="bold" color="white">
-              Total Registrar Users: {registrars.length}
+              Total Signatures: {signatures.length}
             </Typography>
 
             <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
               <Button
-                onClick={() => setRegistrarPage(0)}
-                disabled={registrarPage === 0}
+                onClick={() => setSignaturePage(0)}
+                disabled={signaturePage === 0}
                 variant="outlined"
                 size="small"
                 sx={{
@@ -1165,9 +1143,9 @@ const ExaminationProfile = ({ personId }) => {
 
               <Button
                 onClick={() =>
-                  setRegistrarPage((prev) => Math.max(prev - 1, 0))
+                  setSignaturePage((prev) => Math.max(prev - 1, 0))
                 }
-                disabled={registrarPage === 0}
+                disabled={signaturePage === 0}
                 variant="outlined"
                 size="small"
                 sx={{
@@ -1192,8 +1170,8 @@ const ExaminationProfile = ({ personId }) => {
 
               <FormControl size="small" sx={{ minWidth: 90 }}>
                 <Select
-                  value={registrarPage + 1}
-                  onChange={(e) => setRegistrarPage(Number(e.target.value) - 1)}
+                  value={signaturePage + 1}
+                  onChange={(e) => setSignaturePage(Number(e.target.value) - 1)}
                   displayEmpty
                   sx={{
                     fontSize: "12px",
@@ -1223,7 +1201,7 @@ const ExaminationProfile = ({ personId }) => {
                     },
                   }}
                 >
-                  {Array.from({ length: totalRegistrarPages }, (_, i) => (
+                  {Array.from({ length: totalSignaturePages }, (_, i) => (
                     <MenuItem key={i + 1} value={i + 1}>
                       Page {i + 1}
                     </MenuItem>
@@ -1232,17 +1210,17 @@ const ExaminationProfile = ({ personId }) => {
               </FormControl>
 
               <Typography fontSize="11px" color="white">
-                of {totalRegistrarPages} page
-                {totalRegistrarPages > 1 ? "s" : ""}
+                of {totalSignaturePages} page
+                {totalSignaturePages > 1 ? "s" : ""}
               </Typography>
 
               <Button
                 onClick={() =>
-                  setRegistrarPage((prev) =>
-                    Math.min(prev + 1, totalRegistrarPages - 1),
+                  setSignaturePage((prev) =>
+                    Math.min(prev + 1, totalSignaturePages - 1),
                   )
                 }
-                disabled={registrarPage >= totalRegistrarPages - 1}
+                disabled={signaturePage >= totalSignaturePages - 1}
                 variant="outlined"
                 size="small"
                 sx={{
@@ -1266,8 +1244,8 @@ const ExaminationProfile = ({ personId }) => {
               </Button>
 
               <Button
-                onClick={() => setRegistrarPage(totalRegistrarPages - 1)}
-                disabled={registrarPage >= totalRegistrarPages - 1}
+                onClick={() => setSignaturePage(totalSignaturePages - 1)}
+                disabled={signaturePage >= totalSignaturePages - 1}
                 variant="outlined"
                 size="small"
                 sx={{
@@ -5654,10 +5632,24 @@ const ExaminationProfile = ({ personId }) => {
                             <div
                               style={{
                                 borderBottom: "1px solid #000",
-                                height: "18px",
+                                minHeight: "18px",
                                 marginBottom: "3px",
                               }}
-                            ></div>
+                            >
+                              {selectedPreparedBy?.signature_image && (
+                                <img
+                                  src={getSignatureImageSrc(selectedPreparedBy)}
+                                  alt={selectedPreparedBy.signature_name || "Prepared by signature"}
+                                  style={{
+                                    width: "140px",
+                                    height: "34px",
+                                    objectFit: "contain",
+                                    display: "block",
+                                    margin: "-18px auto -2px",
+                                  }}
+                                />
+                              )}
+                            </div>
 
                             <div
                               style={{
@@ -5666,10 +5658,7 @@ const ExaminationProfile = ({ personId }) => {
                                 fontFamily: "Arial",
                               }}
                             >
-                              {`${selectedPreparedBy.first_name?.toUpperCase()} ${selectedPreparedBy.middle_name
-                                ? selectedPreparedBy.middle_name[0]?.toUpperCase() + "."
-                                : ""
-                                } ${selectedPreparedBy.last_name?.toUpperCase()}`}
+                              {selectedPreparedBy.full_name?.toUpperCase() || ""}
                             </div>
 
                             <div
@@ -5678,7 +5667,7 @@ const ExaminationProfile = ({ personId }) => {
                                 fontFamily: "Arial",
                               }}
                             >
-                              Campus Administrator
+                              {selectedPreparedBy.designation || "Campus Administrator"}
                             </div>
                           </div>
                         </div>
@@ -6483,10 +6472,24 @@ const ExaminationProfile = ({ personId }) => {
                             <div
                               style={{
                                 borderBottom: "1px solid #000",
-                                height: "18px",
+                                minHeight: "18px",
                                 marginBottom: "3px",
                               }}
-                            ></div>
+                            >
+                              {selectedPreparedBy?.signature_image && (
+                                <img
+                                  src={getSignatureImageSrc(selectedPreparedBy)}
+                                  alt={selectedPreparedBy.signature_name || "Prepared by signature"}
+                                  style={{
+                                    width: "140px",
+                                    height: "34px",
+                                    objectFit: "contain",
+                                    display: "block",
+                                    margin: "-18px auto -2px",
+                                  }}
+                                />
+                              )}
+                            </div>
 
                             <div
                               style={{
@@ -6495,10 +6498,7 @@ const ExaminationProfile = ({ personId }) => {
                                 fontFamily: "Arial",
                               }}
                             >
-                              {`${selectedPreparedBy.first_name?.toUpperCase()} ${selectedPreparedBy.middle_name
-                                ? selectedPreparedBy.middle_name[0]?.toUpperCase() + "."
-                                : ""
-                                } ${selectedPreparedBy.last_name?.toUpperCase()}`}
+                              {selectedPreparedBy.full_name?.toUpperCase() || ""}
                             </div>
 
                             <div
@@ -6507,7 +6507,7 @@ const ExaminationProfile = ({ personId }) => {
                                 fontFamily: "Arial",
                               }}
                             >
-                              Campus Administrator
+                              {selectedPreparedBy.designation || "Campus Administrator"}
                             </div>
                           </div>
                         </div>
@@ -7218,10 +7218,24 @@ const ExaminationProfile = ({ personId }) => {
                             <div
                               style={{
                                 borderBottom: "1px solid #000",
-                                height: "18px",
+                                minHeight: "18px",
                                 marginBottom: "3px",
                               }}
-                            ></div>
+                            >
+                              {selectedPreparedBy?.signature_image && (
+                                <img
+                                  src={getSignatureImageSrc(selectedPreparedBy)}
+                                  alt={selectedPreparedBy.signature_name || "Prepared by signature"}
+                                  style={{
+                                    width: "140px",
+                                    height: "34px",
+                                    objectFit: "contain",
+                                    display: "block",
+                                    margin: "-18px auto -2px",
+                                  }}
+                                />
+                              )}
+                            </div>
 
                             <div
                               style={{
@@ -7230,10 +7244,7 @@ const ExaminationProfile = ({ personId }) => {
                                 fontFamily: "Arial",
                               }}
                             >
-                              {`${selectedPreparedBy.first_name?.toUpperCase()} ${selectedPreparedBy.middle_name
-                                ? selectedPreparedBy.middle_name[0]?.toUpperCase() + "."
-                                : ""
-                                } ${selectedPreparedBy.last_name?.toUpperCase()}`}
+                              {selectedPreparedBy.full_name?.toUpperCase() || ""}
                             </div>
 
                             <div
@@ -7242,7 +7253,7 @@ const ExaminationProfile = ({ personId }) => {
                                 fontFamily: "Arial",
                               }}
                             >
-                              Campus Administrator
+                              {selectedPreparedBy.designation || "Campus Administrator"}
                             </div>
                           </div>
                         </div>
@@ -7951,10 +7962,24 @@ const ExaminationProfile = ({ personId }) => {
                             <div
                               style={{
                                 borderBottom: "1px solid #000",
-                                height: "18px",
+                                minHeight: "18px",
                                 marginBottom: "3px",
                               }}
-                            ></div>
+                            >
+                              {selectedPreparedBy?.signature_image && (
+                                <img
+                                  src={getSignatureImageSrc(selectedPreparedBy)}
+                                  alt={selectedPreparedBy.signature_name || "Prepared by signature"}
+                                  style={{
+                                    width: "140px",
+                                    height: "34px",
+                                    objectFit: "contain",
+                                    display: "block",
+                                    margin: "-18px auto -2px",
+                                  }}
+                                />
+                              )}
+                            </div>
 
                             <div
                               style={{
@@ -7963,10 +7988,7 @@ const ExaminationProfile = ({ personId }) => {
                                 fontFamily: "Arial",
                               }}
                             >
-                              {`${selectedPreparedBy.first_name?.toUpperCase()} ${selectedPreparedBy.middle_name
-                                ? selectedPreparedBy.middle_name[0]?.toUpperCase() + "."
-                                : ""
-                                } ${selectedPreparedBy.last_name?.toUpperCase()}`}
+                              {selectedPreparedBy.full_name?.toUpperCase() || ""}
                             </div>
 
                             <div
@@ -7975,7 +7997,7 @@ const ExaminationProfile = ({ personId }) => {
                                 fontFamily: "Arial",
                               }}
                             >
-                              Campus Administrator
+                              {selectedPreparedBy.designation || "Campus Administrator"}
                             </div>
                           </div>
                         </div>

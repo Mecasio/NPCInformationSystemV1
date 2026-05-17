@@ -135,6 +135,100 @@ router.get("/courses/:currId", async (req, res) => {
   }
 });
 
+router.get("/api/program-summer-subjects/check", async (req, res) => {
+  const {
+    curriculum_id,
+    semester_id,
+    active_school_year_id,
+    year_level_id,
+  } = req.query;
+
+  if (!curriculum_id) {
+    return res.status(400).json({ message: "curriculum_id is required" });
+  }
+
+  try {
+    let effectiveSemesterId = semester_id;
+    let schoolYearLabel = "";
+
+    if (!effectiveSemesterId && active_school_year_id) {
+      const [schoolYearRows] = await db3.query(
+        `
+        SELECT
+          asyt.semester_id,
+          yt.year_description,
+          smt.semester_description
+        FROM active_school_year_table asyt
+        LEFT JOIN year_table yt ON yt.year_id = asyt.year_id
+        LEFT JOIN semester_table smt ON smt.semester_id = asyt.semester_id
+        WHERE asyt.id = ?
+        LIMIT 1
+        `,
+        [active_school_year_id],
+      );
+
+      effectiveSemesterId = schoolYearRows[0]?.semester_id;
+      schoolYearLabel = [
+        schoolYearRows[0]?.year_description,
+        schoolYearRows[0]?.semester_description,
+      ].filter(Boolean).join(", ");
+    }
+
+    if (!effectiveSemesterId) {
+      return res.status(400).json({ message: "semester_id or active_school_year_id is required" });
+    }
+
+    const yearLevelClause = year_level_id ? "AND ptt.year_level_id = ?" : "";
+
+    const [rows] = await db3.query(
+      `
+      SELECT
+        COUNT(DISTINCT ptt.course_id) AS subject_count,
+        pt.program_code,
+        pt.program_description,
+        pt.major,
+        smt.semester_description
+      FROM curriculum_table ct
+      LEFT JOIN program_table pt ON pt.program_id = ct.program_id
+      LEFT JOIN semester_table smt ON smt.semester_id = ?
+      LEFT JOIN program_tagging_table ptt
+        ON ptt.curriculum_id = ct.curriculum_id
+       AND ptt.semester_id = smt.semester_id
+       ${yearLevelClause}
+      WHERE ct.curriculum_id = ?
+      GROUP BY
+        pt.program_code,
+        pt.program_description,
+        pt.major,
+        smt.semester_description
+      LIMIT 1
+      `,
+      year_level_id
+        ? [effectiveSemesterId, year_level_id, curriculum_id]
+        : [effectiveSemesterId, curriculum_id],
+    );
+
+    const row = rows[0] || {};
+    const subjectCount = Number(row.subject_count || 0);
+
+    res.json({
+      hasSummerSubjects: subjectCount > 0,
+      subjectCount,
+      curriculum_id: Number(curriculum_id),
+      semester_id: Number(effectiveSemesterId),
+      year_level_id: year_level_id ? Number(year_level_id) : null,
+      programCode: row.program_code || "",
+      programDescription: row.program_description || "",
+      major: row.major || "",
+      semesterDescription: row.semester_description || "",
+      schoolYearLabel,
+    });
+  } catch (err) {
+    console.error("Error checking summer subjects:", err);
+    return res.status(500).json({ message: "Database error", error: err.message });
+  }
+});
+
 // ENROLL ALL SUBJECTS (YEAR 1 + ACTIVE SEM)
 router.post("/add-all-to-enrolled-courses", async (req, res) => {
   const {

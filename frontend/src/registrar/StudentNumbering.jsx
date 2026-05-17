@@ -625,7 +625,8 @@ const StudentNumbering = () => {
     return (
       <Dialog
         open={authOpen}
-        onClose={() => {
+        onClose={(event, reason) => {
+          if (reason === "backdropClick") return;
           setAuthOpen(false);
           navigate("/registrar_dashboard");
         }}
@@ -1460,7 +1461,8 @@ const StudentNumbering = () => {
 
       <Dialog
         open={openModal}
-        onClose={() => {
+        onClose={(event, reason) => {
+          if (reason === "backdropClick") return;
           setOpenModal(false);
         }}
       >

@@ -130,9 +130,13 @@ const StudentRequirements = () => {
 
   const handleStepClick = (index, to) => {
     setActiveStep(index);
-    const pid = sessionStorage.getItem("admin_edit_person_id");
+    const pid =
+      selectedPerson?.person_id ||
+      person?.person_id ||
+      sessionStorage.getItem("admin_edit_person_id");
 
     if (pid && to !== "/applicant_list_admin") {
+      sessionStorage.setItem("admin_edit_person_id", pid);
       navigate(`${to}?person_id=${pid}`);
     } else {
       navigate(to);
