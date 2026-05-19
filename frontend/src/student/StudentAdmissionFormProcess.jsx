@@ -186,19 +186,14 @@ const StudentAdmissionFormProcess = () => {
     setCampusAddress(settings.address || "");
   }, [settings, branches, person?.campus]);
 
-  const fetchData = async (storedID) => {
+  const fetchPersonData = async (id) => {
     try {
-      const targetId = queryPersonId || storedID;
       const res = await axios.get(
-        `${API_BASE_URL}/api/person/student/${targetId}`,
+        `${API_BASE_URL}/api/student-person-data/${id}`,
       );
-      const row = res.data?.rows?.[0] ?? res.data;
-      if (row && typeof row === "object") {
-        setPerson(row);
-      }
-
-    } catch (err) {
-      console.error("Error fetching admission form data:", err);
+      setPerson(res.data); // make sure backend returns the correct format
+    } catch (error) {
+      console.error("Failed to fetch person:", error);
     }
   };
 
@@ -341,7 +336,6 @@ const StudentAdmissionFormProcess = () => {
     }
   });
 
-
   return (
     <Box
       sx={{
@@ -468,7 +462,7 @@ const StudentAdmissionFormProcess = () => {
                       fontWeight: "bold",
                       fontFamily: "Arial",
                       fontSize: "16px",
-                      textTransform: "Uppercase"
+                      textTransform: "Uppercase",
                     }}
                   >
                     {firstLine}
@@ -479,7 +473,7 @@ const StudentAdmissionFormProcess = () => {
                         fontWeight: "bold",
                         fontFamily: "Arial",
                         fontSize: "16px",
-                        textTransform: "Uppercase"
+                        textTransform: "Uppercase",
                       }}
                     >
                       {secondLine}
@@ -1215,11 +1209,11 @@ const StudentAdmissionFormProcess = () => {
                     >
                       {curriculumOptions.length > 0
                         ? curriculumOptions.find(
-                          (item) =>
-                            item?.curriculum_id?.toString() ===
-                            (person?.program ?? "").toString(),
-                        )?.program_description ||
-                        (person?.program ?? "")
+                            (item) =>
+                              item?.curriculum_id?.toString() ===
+                              (person?.program ?? "").toString(),
+                          )?.program_description ||
+                          (person?.program ?? "")
                         : "Loading..."}
                     </div>
                   </div>
@@ -1255,10 +1249,10 @@ const StudentAdmissionFormProcess = () => {
                     >
                       {curriculumOptions.length > 0
                         ? curriculumOptions.find(
-                          (item) =>
-                            item?.curriculum_id?.toString() ===
-                            (person?.program ?? "").toString(),
-                        )?.major || ""
+                            (item) =>
+                              item?.curriculum_id?.toString() ===
+                              (person?.program ?? "").toString(),
+                          )?.major || ""
                         : "Loading..."}
                     </div>
                   </div>
@@ -1648,8 +1642,7 @@ const StudentAdmissionFormProcess = () => {
                       fontWeight: "bold",
                       fontFamily: "Arial",
                       fontSize: "16px",
-                      textTransform: "Uppercase"
-
+                      textTransform: "Uppercase",
                     }}
                   >
                     {firstLine}
@@ -1660,8 +1653,7 @@ const StudentAdmissionFormProcess = () => {
                         fontWeight: "bold",
                         fontFamily: "Arial",
                         fontSize: "16px",
-                        textTransform: "Uppercase"
-
+                        textTransform: "Uppercase",
                       }}
                     >
                       {secondLine}
@@ -2396,11 +2388,11 @@ const StudentAdmissionFormProcess = () => {
                     >
                       {curriculumOptions.length > 0
                         ? curriculumOptions.find(
-                          (item) =>
-                            item?.curriculum_id?.toString() ===
-                            (person?.program ?? "").toString(),
-                        )?.program_description ||
-                        (person?.program ?? "")
+                            (item) =>
+                              item?.curriculum_id?.toString() ===
+                              (person?.program ?? "").toString(),
+                          )?.program_description ||
+                          (person?.program ?? "")
                         : "Loading..."}
                     </div>
                   </div>
@@ -2436,10 +2428,10 @@ const StudentAdmissionFormProcess = () => {
                     >
                       {curriculumOptions.length > 0
                         ? curriculumOptions.find(
-                          (item) =>
-                            item?.curriculum_id?.toString() ===
-                            (person?.program ?? "").toString(),
-                        )?.major || ""
+                            (item) =>
+                              item?.curriculum_id?.toString() ===
+                              (person?.program ?? "").toString(),
+                          )?.major || ""
                         : "Loading..."}
                     </div>
                   </div>
@@ -2759,8 +2751,6 @@ const StudentAdmissionFormProcess = () => {
                   </div>
                 </td>
               </tr>
-
-
             </tbody>
           </table>
         </div>

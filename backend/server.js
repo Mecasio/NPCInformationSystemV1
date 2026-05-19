@@ -1999,8 +1999,6 @@ ${shortTerm} - Admission Office
   }
 });
 
-
-
 // Get full person info + applicant_number
 app.get("/api/person_with_applicant/:id", async (req, res) => {
   const { id } = req.params;
