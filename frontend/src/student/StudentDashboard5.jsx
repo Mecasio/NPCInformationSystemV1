@@ -91,14 +91,7 @@ const StudentDashboard5 = () => {
   const [userID, setUserID] = useState("");
   const [user, setUser] = useState("");
   const [userRole, setUserRole] = useState("");
-  const isReadOnly = userRole === "student";
-  const readOnlySx = isReadOnly
-    ? {
-        "& input, & textarea": { pointerEvents: "none" },
-        "& .MuiSelect-select": { pointerEvents: "none" },
-        "& .MuiCheckbox-root": { pointerEvents: "none" },
-      }
-    : {};
+
   const [selectedPerson, setSelectedPerson] = useState(null);
 
   const [person, setPerson] = useState({
@@ -219,26 +212,10 @@ const StudentDashboard5 = () => {
     fetchPersonById();
   }, [userID]);
 
-  // Do not alter
-  const handleUpdate = async (updatedData) => {
-    if (isReadOnly) return;
-    if (!person || !person.person_id) return;
-
-    try {
-      await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
-      );
-
-      console.log("✅ Auto-saved successfully");
-    } catch (error) {
-      console.error("❌ Auto-save failed:", error);
-    }
-  };
 
   // Real-time save on every character typed
   const handleChange = (e) => {
-    if (isReadOnly) return;
+    
     const { name, type, checked, value } = e.target;
     const updatedPerson = {
       ...person,
@@ -248,39 +225,42 @@ const StudentDashboard5 = () => {
     handleUpdate(updatedPerson); // No delay, real-time save
   };
 
-  const handleBlur = async () => {
-    if (isReadOnly) return;
+  const handleUpdate = async (updatedData) => {
     try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      const { person_id, created_at, current_step, ...cleanPayload } = person;
-
+      const { person_id, created_at, current_step, ...personToSave } = updatedData;
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
       );
+      console.log("✅ Auto-saved to ENROLLMENT DB");
+    } catch (error) {
+      console.error("❌ Auto-save failed:", error);
+    }
+  };
 
-      console.log("Auto-saved on blur");
+  const handleBlur = async () => {
+    try {
+      const { person_id, created_at, current_step, ...personToSave } = person;
+      await axios.put(
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
+      );
+      console.log("✅ Auto-saved on blur");
     } catch (err) {
-      console.error("Auto-save failed", err);
+      console.error("❌ Auto-save failed on blur:", err);
     }
   };
 
   const autoSave = async () => {
-    if (isReadOnly) return;
     try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      const { person_id, created_at, current_step, ...cleanPayload } = person;
-
+      const { person_id, created_at, current_step, ...personToSave } = person;
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
       );
-
-      console.log("Auto-saved.");
+      console.log("✅ Auto-saved (manual trigger)");
     } catch (err) {
-      console.error("Auto-save failed.");
+      console.error("❌ Auto-save failed:", err);
     }
   };
 
@@ -332,9 +312,20 @@ const StudentDashboard5 = () => {
   );
   const [currentStep, setCurrentStep] = useState(0);
 
-  const handleStepClick = (index, to) => {
-    setActiveStep(index);
-    navigate(to);
+  const handleStepClick = (index) => {
+    if (isFormValid()) {
+      setActiveStep(index);
+      const newClickedSteps = [...clickedSteps];
+      newClickedSteps[index] = true;
+      setClickedSteps(newClickedSteps);
+      navigate(steps[index].path); // ✅ actually move to step
+    } else {
+      setSnackbar({
+        open: true,
+        message: "Please fill all required fields before proceeding.",
+        severity: "error",
+      });
+    }
   };
 
   const links = [
@@ -676,7 +667,7 @@ const StudentDashboard5 = () => {
               padding: 4,
               borderRadius: 2,
               boxShadow: 3,
-              ...readOnlySx,
+    
             }}
           >
             <Typography
@@ -802,7 +793,7 @@ const StudentDashboard5 = () => {
                 control={
                   <Checkbox
                     name="termsOfAgreement"
-                    disabled
+                
                     checked={person.termsOfAgreement === 1}
                     onChange={handleChange}
                     onBlur={handleBlur}
@@ -847,13 +838,13 @@ const StudentDashboard5 = () => {
 
               {/* Next Step (Submit) Button */}
               <Button
-                disabled
+           
                 variant="contained"
                 onClick={(e) => {
-                  handleUpdate(); // Save data
+                  handleUpdate(person);
 
                   if (isFormValid()) {
-                    navigate("/student_requirements"); // Proceed only if valid
+                    navigate("/student_online_requirements"); // Proceed only if valid
                   } else {
                     alert(
                       "Please complete all required fields before submitting.",

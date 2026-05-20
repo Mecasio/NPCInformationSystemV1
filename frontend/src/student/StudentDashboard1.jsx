@@ -470,13 +470,22 @@ const StudentDashboard1 = () => {
   const [clickedSteps, setClickedSteps] = useState(
     Array(steps.length).fill(false),
   );
-  const [currentStep, setCurrentStep] = useState(0);
 
-  const handleStepClick = (index, to) => {
-    setActiveStep(index);
-    navigate(to);
+  const handleStepClick = (index) => {
+    if (isFormValid()) {
+      setActiveStep(index);
+      const newClickedSteps = [...clickedSteps];
+      newClickedSteps[index] = true;
+      setClickedSteps(newClickedSteps);
+      navigate(steps[index].path); // ✅ actually move to step
+    } else {
+      setSnackbar({
+        open: true,
+        message: "Please fill all required fields before proceeding.",
+        severity: "error",
+      });
+    }
   };
-  // Do not alter
 
   // Helper: parse "YYYY-MM-DD" safely (local date in Asia/Manila)
   const parseISODate = (dateString) => {
@@ -521,9 +530,24 @@ const StudentDashboard1 = () => {
     return age < 0 ? "" : age;
   };
 
+  // 🧠 Updates record in ENROLLMENT.person_table in real time
+  const handleUpdate = async (updatedPerson) => {
+    try {
+      // Strip UI-only fields that don't exist in the DB
+      const { presentDswdChecked, permanentDswdChecked, ...personToSave } = updatedPerson;
+
+      await axios.put(
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
+      );
+      console.log("✅ Auto-saved to ENROLLMENT DB3");
+    } catch (error) {
+      console.error("❌ Auto-save failed:", error);
+    }
+  };
+
   // 🧩 Real-time handleChange with Manila-based age + filtering reset
   const handleChange = (e) => {
-    if (isReadOnly) return;
     const target = e && e.target ? e.target : {};
     const { name, type, checked, value } = target;
 
@@ -562,61 +586,34 @@ const StudentDashboard1 = () => {
     handleUpdate(updatedPerson); // real-time save
   };
 
-  const handleUpdate = async (updatedData) => {
-    if (isReadOnly) return;
-    try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      // Remove internal fields that should NOT be saved
-      const { person_id, created_at, current_step, ...cleanPayload } =
-        updatedData;
-
-      await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
-      );
-
-      console.log("Real-time update saved.");
-    } catch (err) {
-      console.error("Real-time update failed", err);
-    }
-  };
-
+  // 🖱️ Triggered when input loses focus (safety net)
   const handleBlur = async () => {
-    if (isReadOnly) return;
     try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      const { person_id, created_at, current_step, ...cleanPayload } = person;
-
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        person,
+        getAuditHeaders(),
       );
-
-      console.log("Auto-saved on blur");
+      console.log("✅ Auto-saved (on blur) to ENROLLMENT DB3");
     } catch (err) {
-      console.error("Auto-save failed", err);
+      console.error("❌ Auto-save failed (on blur):", err);
     }
   };
 
+  // 💾 Manual autosave (optional call)
   const autoSave = async () => {
-    if (isReadOnly) return;
     try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      const { person_id, created_at, current_step, ...cleanPayload } = person;
-
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        person,
+        getAuditHeaders(),
       );
-
-      console.log("Auto-saved.");
+      console.log("✅ Auto-saved (manual trigger) to ENROLLMENT DB3");
     } catch (err) {
-      console.error("Auto-save failed.");
+      console.error("❌ Auto-save failed (manual):", err);
     }
   };
+
 
   const [uploadedImage, setUploadedImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -630,7 +627,7 @@ const StudentDashboard1 = () => {
     setPreview(null);
   };
 
-   const handleFileChange = (e) => {
+  const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -931,8 +928,6 @@ const StudentDashboard1 = () => {
       "profile_img",
       "last_name",
       "first_name",
-      "middle_name",
-      "nickname",
       "height",
       "weight",
       "gender",
@@ -952,14 +947,12 @@ const StudentDashboard1 = () => {
       "presentProvince",
       "presentMunicipality",
       "presentBarangay",
-      "presentDswdHouseholdNumber",
       "permanentStreet",
       "permanentZipCode",
       "permanentRegion",
       "permanentProvince",
       "permanentMunicipality",
       "permanentBarangay",
-      "permanentDswdHouseholdNumber",
     ];
 
     let newErrors = {};
@@ -968,19 +961,49 @@ const StudentDashboard1 = () => {
     // Generic required fields
     requiredFields.forEach((field) => {
       const value = person[field];
-      const stringValue = value?.toString().trim();
-
-      if (!stringValue) {
+      if (
+        value === null ||
+        value === undefined ||
+        value === "" ||
+        value === "null" ||
+        value === "undefined"
+      ) {
         newErrors[field] = true;
         isValid = false;
       }
     });
+
+    // ✅ NEW EMAIL VALIDATION (any domain allowed)
+    const emailValue = person.emailAddress?.trim();
+    const emailPattern = /^[^@]+@[^@]+\.[^@]+$/;
+
+    if (!emailValue || !emailPattern.test(emailValue)) {
+      newErrors.emailAddress = true;
+      isValid = false;
+    }
 
     // ✅ LRN Number: required only if N/A is NOT checked
     if (!isLrnNA) {
       const lrnValue = person.lrnNumber?.toString().trim();
       if (!lrnValue) {
         newErrors.lrnNumber = true;
+        isValid = false;
+      }
+    }
+
+    if (person.presentDswdChecked === 1) {
+      const value = person.presentDswdHouseholdNumber?.trim();
+      if (!value) {
+        newErrors.presentDswdHouseholdNumber = true;
+        isValid = false;
+      }
+    }
+
+    // ✅ Permanent DSWD (only if checked)
+    if (person.permanentDswdChecked === 1) {
+      const value = person.permanentDswdHouseholdNumber?.trim();
+      if (!value) {
+        newErrors.permanentDswdHouseholdNumber = true;
         isValid = false;
       }
     }
@@ -1484,6 +1507,7 @@ const StudentDashboard1 = () => {
               >
                 <InputLabel id="classified-as-label">Classified As</InputLabel>
                 <Select
+                  readOnly
                   labelId="classified-as-label"
                   id="classified-as-select"
                   name="classifiedAs"
@@ -1588,7 +1612,7 @@ const StudentDashboard1 = () => {
                     <FormControl fullWidth size="small" required error={!!errors.program}>
                       <InputLabel>Course Applied</InputLabel>
                       <Select
-                      readOnly
+                        readOnly
                         name="program"
                         value={person.program || ""}
                         onBlur={() => handleUpdate(person)} onChange={handleChange}
@@ -1677,6 +1701,7 @@ const StudentDashboard1 = () => {
                     >
                       <InputLabel id="year-level-label">Year Level</InputLabel>
                       <Select
+                        readOnly
                         labelId="year-level-label"
                         id="year-level-select"
                         name="yearLevel"
@@ -1909,9 +1934,9 @@ const StudentDashboard1 = () => {
             </Box>
             <Box display="flex" gap={4} mb={2}>
               {/* Height Field */}
-              <Box display="flex" flexDirection="column" flex="0 0 26%">
+              <Box display="flex" flexDirection="column" flex="0 0 28%">
                 <Box display="flex" alignItems="center" gap={1}>
-                  <Typography fontWeight="medium" minWidth="70px">
+                  <Typography fontWeight="medium" minWidth="75px">
                     Height:<span style={{ color: "red" }}> *</span>
                   </Typography>
                   <TextField
@@ -1935,7 +1960,7 @@ const StudentDashboard1 = () => {
               </Box>
 
               {/* Weight Field */}
-              <Box display="flex" flexDirection="column" flex="0 0 26%">
+              <Box display="flex" flexDirection="column" flex="0 0 28%">
                 <Box display="flex" alignItems="center" gap={1}>
                   <Typography fontWeight="medium" minWidth="85px">
                     Weight:<span style={{ color: "red" }}> *</span>
@@ -1977,6 +2002,7 @@ const StudentDashboard1 = () => {
 
               {/* LRN Input */}
               <TextField
+
                 id="lrnNumber"
                 name="lrnNumber"
                 required={person.lrnNumber !== "No LRN Number"}
@@ -1991,8 +2017,7 @@ const StudentDashboard1 = () => {
                 disabled={person.lrnNumber === "No LRN Number"}
                 size="small"
                 sx={{ width: 220 }}
-                InputProps={{ sx: { height: 40 } }}
-                inputProps={{ style: { height: 40, padding: "10.5px 14px" } }}
+                InputProps={{ readOnly: true }}
                 error={errors.lrnNumber}
                 helperText={errors.lrnNumber ? "This field is required." : ""}
               />
@@ -2025,6 +2050,7 @@ const StudentDashboard1 = () => {
               </Typography>
               {/* Gender */}
               <TextField
+
                 select
                 size="small"
                 label="SEX"
@@ -2043,8 +2069,7 @@ const StudentDashboard1 = () => {
                 onBlur={() => handleUpdate(person)}
                 error={Boolean(errors.gender)}
                 sx={{ width: 150 }}
-                InputProps={{ sx: { height: 40 } }}
-                inputProps={{ style: { height: 40 } }}
+                InputProps={{ readOnly: true }}
               >
                 <MenuItem value="">
                   <em>Select Gender</em>
@@ -2222,6 +2247,7 @@ const StudentDashboard1 = () => {
                   onBlur={handleBlur}
                   onChange={handleChange}
                   error={!!errors.birthPlace}
+                  InputProps={{ readOnly: true }}
                   helperText={
                     errors.birthPlace ? "This field is required." : ""
                   }
@@ -2256,6 +2282,7 @@ const StudentDashboard1 = () => {
                   Citizenship<span style={{ color: "red" }}> *</span>
                 </Typography>
                 <FormControl
+
                   fullWidth
                   size="small"
                   required
@@ -2263,6 +2290,7 @@ const StudentDashboard1 = () => {
                 >
                   <InputLabel id="citizenship-label">Citizenship</InputLabel>
                   <Select
+                    readOnly
                     labelId="citizenship-label"
                     id="citizenship"
                     name="citizenship"
@@ -2415,6 +2443,7 @@ const StudentDashboard1 = () => {
                     name="religion"
                     value={person.religion || ""}
                     onChange={handleChange}
+
                     onBlur={() => handleUpdate(person)}
                     label="Religion" // Enables floating label
                   >
@@ -2468,6 +2497,7 @@ const StudentDashboard1 = () => {
                 >
                   <InputLabel id="civil-status-label">Civil Status</InputLabel>
                   <Select
+                    readOnly
                     labelId="civil-status-label"
                     id="civilStatus"
                     name="civilStatus"
@@ -2678,6 +2708,7 @@ const StudentDashboard1 = () => {
                   Present Street<span style={{ color: "red" }}> *</span>
                 </Typography>
                 <TextField
+                  InputProps={{ readOnly: true }}
                   fullWidth
                   size="small"
                   name="presentStreet"
@@ -2974,6 +3005,7 @@ const StudentDashboard1 = () => {
                   Permanent Street<span style={{ color: "red" }}> *</span>
                 </Typography>
                 <TextField
+                  InputProps={{ readOnly: true }}
                   fullWidth
                   size="small"
                   name="permanentStreet"
@@ -3486,7 +3518,7 @@ const StudentDashboard1 = () => {
                   handleUpdate(person);
 
                   if (isFormValid()) {
-                    navigate(`/dashboard/${keys.step2}`);
+                    navigate("/student_dashboard2");
                   } else {
                     showSnackbar(
                       "Please complete all required fields before proceeding.",

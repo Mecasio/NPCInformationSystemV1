@@ -76,14 +76,7 @@ const StudentDashboard3 = () => {
   const [userID, setUserID] = useState("");
   const [user, setUser] = useState("");
   const [userRole, setUserRole] = useState("");
-  const isReadOnly = userRole === "student";
-  const readOnlySx = isReadOnly
-    ? {
-        "& input, & textarea": { pointerEvents: "none" },
-        "& .MuiSelect-select": { pointerEvents: "none" },
-        "& .MuiCheckbox-root": { pointerEvents: "none" },
-      }
-    : {};
+
   const [person, setPerson] = useState({
     schoolLevel: "",
     schoolLastAttended: "",
@@ -217,28 +210,34 @@ const StudentDashboard3 = () => {
   }, [userID]);
 
   const handleUpdate = async (updatedData) => {
-    if (isReadOnly) return;
     try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      // Remove internal fields that should NOT be saved
-      const { person_id, created_at, current_step, ...cleanPayload } =
-        updatedData;
-
+      const { person_id, created_at, current_step, ...personToSave } = updatedData;
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
       );
+      console.log("✅ Auto-saved to ENROLLMENT DB");
+    } catch (error) {
+      console.error("❌ Auto-save failed:", error);
+    }
+  };
 
-      console.log("Real-time update saved.");
+  const handleBlur = async () => {
+    try {
+      const { person_id, created_at, current_step, ...personToSave } = person;
+      await axios.put(
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
+      );
+      console.log("✅ Auto-saved on blur");
     } catch (err) {
-      console.error("Real-time update failed", err);
+      console.error("❌ Auto-save failed on blur:", err);
     }
   };
 
   // Real-time save on every character typed
   const handleChange = (e) => {
-    if (isReadOnly) return;
+
     const { name, type, checked, value } = e.target;
     const updatedPerson = {
       ...person,
@@ -248,23 +247,6 @@ const StudentDashboard3 = () => {
     handleUpdate(updatedPerson); // No delay, real-time save
   };
 
-  const handleBlur = async () => {
-    if (isReadOnly) return;
-    try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      const { person_id, created_at, current_step, ...cleanPayload } = person;
-
-      await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
-      );
-
-      console.log("Auto-saved on blur");
-    } catch (err) {
-      console.error("Auto-save failed", err);
-    }
-  };
 
   const steps = [
     {
@@ -297,26 +279,28 @@ const StudentDashboard3 = () => {
   const [errors, setErrors] = useState({});
 
   const isFormValid = () => {
-    const requiredFields = [
-      // Original fields
+    let requiredFields = [
+      // ✅ Always required (Junior High)
       "schoolLevel",
       "schoolLastAttended",
       "schoolAddress",
-      "courseProgram",
       "honor",
       "generalAverage",
       "yearGraduated",
-      "strand",
-
-      // Newly added fields
-      "schoolLevel1",
-      "schoolLastAttended1",
-      "schoolAddress1",
-      "courseProgram1",
-      "honor1",
-      "generalAverage1",
-      "yearGraduated1",
     ];
+
+    // ✅ CONDITION: if applyingAs is 1–4 → require Senior High
+    if (requiresSeniorHigh) {
+      requiredFields.push(
+        "schoolLevel1",
+        "schoolLastAttended1",
+        "schoolAddress1",
+        "honor1",
+        "generalAverage1",
+        "yearGraduated1",
+        "strand"
+      );
+    }
 
     let newErrors = {};
     let isValid = true;
@@ -335,15 +319,27 @@ const StudentDashboard3 = () => {
     return isValid;
   };
 
+
   const [activeStep, setActiveStep] = useState(2);
   const [clickedSteps, setClickedSteps] = useState(
     Array(steps.length).fill(false),
   );
   const [currentStep, setCurrentStep] = useState(0);
 
-  const handleStepClick = (index, to) => {
-    setActiveStep(index);
-    navigate(to);
+  const handleStepClick = (index) => {
+    if (isFormValid()) {
+      setActiveStep(index);
+      const newClickedSteps = [...clickedSteps];
+      newClickedSteps[index] = true;
+      setClickedSteps(newClickedSteps);
+      navigate(steps[index].path); // ✅ actually move to step
+    } else {
+      setSnackbar({
+        open: true,
+        message: "Please fill all required fields before proceeding.",
+        severity: "error",
+      });
+    }
   };
 
   const links = [
@@ -683,11 +679,11 @@ const StudentDashboard3 = () => {
             maxWidth="100%"
             sx={{
               backgroundColor: "#f1f1f1",
-            border: `1px solid ${borderColor}`,
+              border: `1px solid ${borderColor}`,
               padding: 4,
               borderRadius: 2,
               boxShadow: 3,
-              ...readOnlySx,
+
             }}
           >
             <Typography
@@ -717,7 +713,7 @@ const StudentDashboard3 = () => {
                   mb={1}
                   sx={{ minHeight: "32px" }}
                 >
-                  Educational Attainment
+                  Educational Attainment <span style={{ color: "red" }}>*</span>
                 </Typography>
 
                 <FormControl
@@ -759,7 +755,7 @@ const StudentDashboard3 = () => {
                   mb={1}
                   sx={{ minHeight: "32px" }}
                 >
-                  School Last Attended
+                  School Last Attended <span style={{ color: "red" }}>*</span>
                 </Typography>
 
                 <TextField
@@ -785,7 +781,7 @@ const StudentDashboard3 = () => {
                   mb={1}
                   sx={{ minHeight: "32px", fontSize: "12.5px" }}
                 >
-                  School Full Address (Street / BRGY / City)
+                  School Full Address (Street / BRGY / City) <span style={{ color: "red" }}>*</span>
                 </Typography>
 
                 <TextField
@@ -840,7 +836,7 @@ const StudentDashboard3 = () => {
             >
               <Box sx={{ flex: "1 1 33%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  Recognition / Awards
+                  Recognition / Awards <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -858,7 +854,7 @@ const StudentDashboard3 = () => {
 
               <Box sx={{ flex: "1 1 33%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  General Average
+                  General Average  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -878,7 +874,7 @@ const StudentDashboard3 = () => {
 
               <Box sx={{ flex: "1 1 33%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  Year Graduated
+                  Year Graduated  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -919,7 +915,7 @@ const StudentDashboard3 = () => {
               {/* School Level 1 */}
               <Box sx={{ flex: "1 1 25%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  Educational Attainment
+                  Educational Attainment  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <FormControl
                   fullWidth
@@ -959,7 +955,7 @@ const StudentDashboard3 = () => {
               {/* School Last Attended 1 */}
               <Box sx={{ flex: "1 1 25%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  School Last Attended
+                  School Last Attended  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -980,7 +976,7 @@ const StudentDashboard3 = () => {
               {/* School Address 1 */}
               <Box sx={{ flex: "1 1 25%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  School Address
+                  School Address  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -1001,7 +997,7 @@ const StudentDashboard3 = () => {
               {/* Course Program 1 */}
               <Box sx={{ flex: "1 1 25%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  Course Program
+                  Course Program  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -1030,7 +1026,7 @@ const StudentDashboard3 = () => {
               {/* Honor 1 */}
               <Box sx={{ flex: "1 1 33%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  Recognition / Awards
+                  Recognition / Awards  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -1049,7 +1045,7 @@ const StudentDashboard3 = () => {
               {/* General Average 1 */}
               <Box sx={{ flex: "1 1 33%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  General Average
+                  General Average  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -1070,7 +1066,7 @@ const StudentDashboard3 = () => {
               {/* Year Graduated 1 */}
               <Box sx={{ flex: "1 1 33%" }}>
                 <Typography variant="subtitle1" mb={1}>
-                  Year Graduated
+                  Year Graduated  <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -1100,7 +1096,9 @@ const StudentDashboard3 = () => {
             </Typography>
             <hr style={{ border: "1px solid #ccc", width: "100%" }} />
             <br />
-
+            <Typography variant="subtitle1" mb={1}>
+              Strand <span style={{ color: "red" }}>*</span>
+            </Typography>
             <FormControl
               fullWidth
               size="small"
@@ -1161,6 +1159,15 @@ const StudentDashboard3 = () => {
                 variant="contained"
                 component={Link}
                 to="/student_dashboard2"
+                onClick={() => {
+                  handleUpdate(person);
+
+                  if (isFormValid()) {
+                    navigate("/student_dashboard2");
+                  } else {
+                    showSnackbar("Please complete all required fields before proceeding.");
+                  }
+                }}
                 startIcon={
                   <ArrowBackIcon
                     sx={{
@@ -1188,14 +1195,13 @@ const StudentDashboard3 = () => {
               {/* Next Step Button */}
               <Button
                 variant="contained"
-                onClick={(e) => {
-                  handleUpdate();
+                onClick={() => {
+                  handleUpdate(person);
+
                   if (isFormValid()) {
                     navigate("/student_dashboard4");
                   } else {
-                    alert(
-                      "Please complete all required fields before proceeding.",
-                    );
+                    showSnackbar("Please complete all required fields before proceeding.");
                   }
                 }}
                 endIcon={

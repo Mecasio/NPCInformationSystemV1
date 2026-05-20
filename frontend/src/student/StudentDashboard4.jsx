@@ -96,10 +96,10 @@ const StudentDashboard4 = () => {
   const isReadOnly = userRole === "student";
   const readOnlySx = isReadOnly
     ? {
-        "& input, & textarea": { pointerEvents: "none" },
-        "& .MuiSelect-select": { pointerEvents: "none" },
-        "& .MuiCheckbox-root": { pointerEvents: "none" },
-      }
+      "& input, & textarea": { pointerEvents: "none" },
+      "& .MuiSelect-select": { pointerEvents: "none" },
+      "& .MuiCheckbox-root": { pointerEvents: "none" },
+    }
     : {};
   const [person, setPerson] = useState({
     cough: "",
@@ -234,58 +234,41 @@ const StudentDashboard4 = () => {
   }, [queryPersonId]);
 
   const handleUpdate = async (updatedData) => {
-    if (isReadOnly) return;
     try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      // Remove internal fields that should NOT be saved
-      const { person_id, created_at, current_step, ...cleanPayload } =
-        updatedData;
-
+      const { person_id, created_at, current_step, ...personToSave } = updatedData;
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
       );
-
-      console.log("Real-time update saved.");
-    } catch (err) {
-      console.error("Real-time update failed", err);
+      console.log("✅ Auto-saved to ENROLLMENT DB");
+    } catch (error) {
+      console.error("❌ Auto-save failed:", error);
     }
   };
 
   const handleBlur = async () => {
-    if (isReadOnly) return;
     try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      const { person_id, created_at, current_step, ...cleanPayload } = person;
-
+      const { person_id, created_at, current_step, ...personToSave } = person;
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
       );
-
-      console.log("Auto-saved on blur");
+      console.log("✅ Auto-saved on blur");
     } catch (err) {
-      console.error("Auto-save failed", err);
+      console.error("❌ Auto-save failed on blur:", err);
     }
   };
 
   const autoSave = async () => {
-    if (isReadOnly) return;
     try {
-      const personIdToUpdate = selectedPerson?.person_id || userID;
-
-      const { person_id, created_at, current_step, ...cleanPayload } = person;
-
+      const { person_id, created_at, current_step, ...personToSave } = person;
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
-        cleanPayload,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
+        personToSave,
       );
-
-      console.log("Auto-saved.");
+      console.log("✅ Auto-saved (manual trigger)");
     } catch (err) {
-      console.error("Auto-save failed.");
+      console.error("❌ Auto-save failed:", err);
     }
   };
 
@@ -345,10 +328,20 @@ const StudentDashboard4 = () => {
     Array(steps.length).fill(false),
   );
   const [currentStep, setCurrentStep] = useState(0);
-
-  const handleStepClick = (index, to) => {
-    setActiveStep(index);
-    navigate(to);
+  const handleStepClick = (index) => {
+    if (isFormValid()) {
+      setActiveStep(index);
+      const newClickedSteps = [...clickedSteps];
+      newClickedSteps[index] = true;
+      setClickedSteps(newClickedSteps);
+      navigate(steps[index].path); // ✅ actually move to step
+    } else {
+      setSnackbar({
+        open: true,
+        message: "Please fill all required fields before proceeding.",
+        severity: "error",
+      });
+    }
   };
 
   const inputStyle = {
@@ -546,7 +539,7 @@ const StudentDashboard4 = () => {
               <PictureAsPdfIcon
                 className="card-icon"
                 sx={{ fontSize: 35, color: mainButtonColor, mr: 1.5 }}
-                      />
+              />
 
               {/* Label */}
               <Typography
@@ -658,7 +651,7 @@ const StudentDashboard4 = () => {
                     alignSelf: "center",
                     mx: 2,
                   }}
-                      />
+                />
               )}
             </React.Fragment>
           ))}
@@ -740,11 +733,11 @@ const StudentDashboard4 = () => {
                         handleUpdate(updatedPerson);
                       }}
                       onBlur={handleBlur}
-                      />
+                    />
                   }
                   label={symptom.charAt(0).toUpperCase() + symptom.slice(1)}
                   sx={{ ml: 5 }}
-                      />
+                />
               ))}
             </FormGroup>
 
@@ -884,7 +877,7 @@ const StudentDashboard4 = () => {
                                       handleUpdate(updatedPerson);
                                     }}
                                     onBlur={handleBlur}
-                      />
+                                  />
                                   <span
                                     style={{
                                       fontSize: "15px",
@@ -916,7 +909,7 @@ const StudentDashboard4 = () => {
                                       handleUpdate(updatedPerson);
                                     }}
                                     onBlur={handleBlur}
-                      />
+                                  />
                                   <span
                                     style={{
                                       fontSize: "15px",
@@ -972,10 +965,10 @@ const StudentDashboard4 = () => {
                             handleUpdate(updatedPerson);
                           }}
                           onBlur={handleBlur}
-                      />
+                        />
                       }
                       label="Yes"
-                      />
+                    />
 
                     {/* NO */}
                     <FormControlLabel
@@ -994,10 +987,10 @@ const StudentDashboard4 = () => {
                             handleUpdate(updatedPerson);
                           }}
                           onBlur={handleBlur}
-                      />
+                        />
                       }
                       label="No"
-                      />
+                    />
                   </Box>
                 </Box>
               </Box>
@@ -1028,7 +1021,7 @@ const StudentDashboard4 = () => {
                   handleUpdate(updatedPerson);
                 }}
                 onBlur={handleBlur}
-                      />
+              />
             </Box>
 
             <br />
@@ -1057,7 +1050,7 @@ const StudentDashboard4 = () => {
                   handleUpdate(updatedPerson);
                 }}
                 onBlur={handleBlur}
-                      />
+              />
             </Box>
 
             {/* IV. COVID PROFILE */}
@@ -1111,7 +1104,7 @@ const StudentDashboard4 = () => {
                               handleUpdate(updatedPerson);
                             }}
                             onBlur={handleBlur}
-                      />
+                          />
                           <span
                             style={{ fontSize: "15px", fontFamily: "Poppins, sans-serif" }}
                           >
@@ -1134,7 +1127,7 @@ const StudentDashboard4 = () => {
                               handleUpdate(updatedPerson);
                             }}
                             onBlur={handleBlur}
-                      />
+                          />
                           <span
                             style={{ fontSize: "15px", fontFamily: "Poppins, sans-serif" }}
                           >
@@ -1146,7 +1139,7 @@ const StudentDashboard4 = () => {
                       {/* IF YES, WHEN */}
                       <span>IF YES, WHEN:</span>
                       <DateField
-                          size="small"
+                        size="small"
                         name="covidDate"
                         readOnly
                         value={person.covidDate || ""}
@@ -1228,7 +1221,7 @@ const StudentDashboard4 = () => {
                                 }}
                                 onBlur={handleBlur}
                                 style={inputStyle}
-                      />
+                              />
                             </td>
                           ))}
                         </tr>
@@ -1245,8 +1238,8 @@ const StudentDashboard4 = () => {
                           ].map((field) => (
                             <td key={field} style={{ padding: "4px" }}>
                               <DateField
-                                  size="small"
-                        name={field}
+                                size="small"
+                                name={field}
                                 readOnly
                                 value={person[field] || ""}
                                 onChange={(e) => {
@@ -1259,7 +1252,7 @@ const StudentDashboard4 = () => {
                                 }}
                                 onBlur={handleBlur}
                                 style={inputStyle}
-                      />
+                              />
                             </td>
                           ))}
                         </tr>
@@ -1299,7 +1292,7 @@ const StudentDashboard4 = () => {
                       }}
                       onBlur={handleBlur}
                       className="w-full border px-3 py-2 rounded"
-                      />
+                    />
                   </td>
                 </tr>
 
@@ -1320,7 +1313,7 @@ const StudentDashboard4 = () => {
                       }}
                       onBlur={handleBlur}
                       className="w-full border px-3 py-2 rounded"
-                      />
+                    />
                   </td>
                 </tr>
 
@@ -1343,7 +1336,7 @@ const StudentDashboard4 = () => {
                       }}
                       onBlur={handleBlur}
                       className="w-full border px-3 py-2 rounded"
-                      />
+                    />
                   </td>
                 </tr>
 
@@ -1366,7 +1359,7 @@ const StudentDashboard4 = () => {
                       }}
                       onBlur={handleBlur}
                       className="w-full border px-3 py-2 rounded"
-                      />
+                    />
                   </td>
                 </tr>
               </tbody>
@@ -1438,7 +1431,7 @@ const StudentDashboard4 = () => {
                               handleUpdate(updatedPerson);
                             }}
                             onBlur={handleBlur}
-                      />
+                          />
                           <span
                             style={{ fontSize: "15px", fontFamily: "Poppins, sans-serif" }}
                           >
@@ -1468,7 +1461,7 @@ const StudentDashboard4 = () => {
                               handleUpdate(updatedPerson);
                             }}
                             onBlur={handleBlur}
-                      />
+                          />
                           <span
                             style={{ fontSize: "15px", fontFamily: "Poppins, sans-serif" }}
                           >
@@ -1549,7 +1542,7 @@ const StudentDashboard4 = () => {
                       color: "#000",
                       transition: "color 0.3s",
                     }}
-                      />
+                  />
                 }
                 sx={{
                   backgroundColor: subButtonColor,
@@ -1571,7 +1564,7 @@ const StudentDashboard4 = () => {
               <Button
                 variant="contained"
                 onClick={(e) => {
-                  handleUpdate();
+                   handleUpdate(person);
                   navigate("/student_dashboard5");
                 }}
                 endIcon={
@@ -1580,7 +1573,7 @@ const StudentDashboard4 = () => {
                       color: "#fff",
                       transition: "color 0.3s",
                     }}
-                      />
+                  />
                 }
                 sx={{
                   backgroundColor: mainButtonColor,

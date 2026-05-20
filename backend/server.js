@@ -61,7 +61,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://192.168.50.211:5173",
   "http://136.239.248.62:5173",
-  "http://192.168.50.55:5173",
+  "http://192.168.50.62:5173",
   "http://192.168.1.9:5173",
 ];
 
@@ -2910,10 +2910,15 @@ app.put("/api/enrollment/person/:person_id", async (req, res) => {
   const { person_id } = req.params;
   const updatedData = req.body;
 
+  const excludedFields = ["document_status", "evaluator"];
+  const sanitizedData = Object.fromEntries(
+    Object.entries(updatedData).filter(([key]) => !excludedFields.includes(key))
+  );
+
   try {
     const [result] = await db3.query(
       "UPDATE person_table SET ? WHERE person_id = ?",
-      [updatedData, person_id],
+      [sanitizedData, person_id],
     );
 
     if (result.affectedRows === 0)

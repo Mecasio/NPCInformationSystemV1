@@ -251,17 +251,9 @@ const StudentDashboard2 = () => {
     fetchPersonById();
   }, [userID]);
 
-  const isReadOnly = userRole === "student";
-  const readOnlySx = isReadOnly
-    ? {
-        "& input, & textarea": { pointerEvents: "none" },
-        "& .MuiSelect-select": { pointerEvents: "none" },
-        "& .MuiCheckbox-root": { pointerEvents: "none" },
-      }
-    : {};
 
   const handleUpdate = async (updatedData) => {
-    if (isReadOnly) return;
+
     try {
       const personIdToUpdate = selectedPerson?.person_id || userID;
 
@@ -270,7 +262,7 @@ const StudentDashboard2 = () => {
         updatedData;
 
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
         cleanPayload,
       );
 
@@ -281,14 +273,14 @@ const StudentDashboard2 = () => {
   };
 
   const handleBlur = async () => {
-    if (isReadOnly) return;
+
     try {
       const personIdToUpdate = selectedPerson?.person_id || userID;
 
       const { person_id, created_at, current_step, ...cleanPayload } = person;
 
       await axios.put(
-        `${API_BASE_URL}/api/student/update_person/${personIdToUpdate}`,
+        `${API_BASE_URL}/api/enrollment/person/${userID}`,
         cleanPayload,
       );
 
@@ -300,7 +292,7 @@ const StudentDashboard2 = () => {
 
   // Real-time save on every character typed
   const handleChange = (e) => {
-    if (isReadOnly) return;
+
     const { name, type, checked, value } = e.target;
 
     const updatedPerson = {
@@ -376,13 +368,24 @@ const StudentDashboard2 = () => {
   );
   const [currentStep, setCurrentStep] = useState(0);
 
-  const handleStepClick = (index, to) => {
-    setActiveStep(index);
-    navigate(to);
+  const handleStepClick = (index) => {
+    if (isFormValid()) {
+      setActiveStep(index);
+      const newClickedSteps = [...clickedSteps];
+      newClickedSteps[index] = true;
+      setClickedSteps(newClickedSteps);
+      navigate(steps[index].path); // ✅ actually move to step
+    } else {
+      setSnackbar({
+        open: true,
+        message: "Please fill all required fields before proceeding.",
+        severity: "error",
+      });
+    }
   };
 
   const handleGuardianChange = (e) => {
-    if (isReadOnly) return;
+
     const { value } = e.target;
 
     let updatedPerson = { ...person, guardian: value };
@@ -470,13 +473,10 @@ const StudentDashboard2 = () => {
       requiredFields.push(
         "father_family_name",
         "father_given_name",
-        "father_middle_name",
-        "father_nickname",
         "father_contact",
         "father_occupation",
         "father_employer",
         "father_income",
-        "father_email",
       );
 
       // but only require education details if father_education !== 1
@@ -496,13 +496,10 @@ const StudentDashboard2 = () => {
       requiredFields.push(
         "mother_family_name",
         "mother_given_name",
-        "mother_middle_name",
-        "mother_nickname",
         "mother_contact",
         "mother_occupation",
         "mother_employer",
         "mother_income",
-        "mother_email",
       );
 
       // only require education details if mother_education !== 1
@@ -522,8 +519,6 @@ const StudentDashboard2 = () => {
       "guardian",
       "guardian_family_name",
       "guardian_given_name",
-      "guardian_middle_name",
-      "guardian_nickname",
       "guardian_address",
       "guardian_contact",
     );
@@ -592,7 +587,7 @@ const StudentDashboard2 = () => {
             fontSize: "36px",
           }}
         >
-           FAMILY BACKGROUND
+          FAMILY BACKGROUND
         </Typography>
       </Box>
 
@@ -896,7 +891,7 @@ const StudentDashboard2 = () => {
               padding: 4,
               borderRadius: 2,
               boxShadow: 3,
-              ...readOnlySx,
+
             }}
           >
             <Typography
@@ -1021,12 +1016,16 @@ const StudentDashboard2 = () => {
                   <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={1}>
-                        Father Family Name
+                        Father Last Name <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         fullWidth
                         size="small"
                         required
+                        InputProps={{
+                          readOnly: true,
+                          sx: { textTransform: "uppercase" } // must be inside InputProps
+                        }}
                         placeholder="Enter Father Last Name"
                         name="father_family_name"
                         value={person.father_family_name ?? ""}
@@ -1041,10 +1040,12 @@ const StudentDashboard2 = () => {
                       />
                     </Box>
                     <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle2" mb={1}>
-                        Father Given Name
-                      </Typography>
+                      Father Given Name <span style={{ color: "red" }}>*</span>
                       <TextField
+                        InputProps={{
+                          readOnly: true,
+                          sx: { textTransform: "uppercase" } // must be inside InputProps
+                        }}
                         fullWidth
                         size="small"
                         required
@@ -1063,12 +1064,16 @@ const StudentDashboard2 = () => {
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={1}>
-                        Father Middle Name
+                        Father Middle Name 
                       </Typography>
                       <TextField
                         fullWidth
                         size="small"
                         required
+                        InputProps={{
+                          readOnly: true,
+                          sx: { textTransform: "uppercase" } // must be inside InputProps
+                        }}
                         name="father_middle_name"
                         placeholder="Enter Father Middle Name"
                         value={person.father_middle_name ?? ""}
@@ -1084,7 +1089,9 @@ const StudentDashboard2 = () => {
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={1}>
+
                         Father Extension
+
                       </Typography>
                       <FormControl
                         fullWidth
@@ -1147,7 +1154,7 @@ const StudentDashboard2 = () => {
                   <Typography
                     sx={{
                       fontSize: "20px",
-                      color: "#6D2323",
+                      color: mainButtonColor,
                       fontWeight: "bold",
                       mt: 3,
                     }}
@@ -1169,12 +1176,12 @@ const StudentDashboard2 = () => {
                           father_education: isChecked ? 1 : 0,
                           ...(isChecked
                             ? {
-                                father_education_level: "",
-                                father_last_school: "",
-                                father_course: "",
-                                father_year_graduated: "",
-                                father_school_address: "",
-                              }
+                              father_education_level: "",
+                              father_last_school: "",
+                              father_course: "",
+                              father_year_graduated: "",
+                              father_school_address: "",
+                            }
                             : {}),
                         };
 
@@ -1196,7 +1203,7 @@ const StudentDashboard2 = () => {
                     >
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Father Education Level
+                          Father Education Level<span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1217,7 +1224,7 @@ const StudentDashboard2 = () => {
 
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Father Last School
+                          Father Last School <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1238,7 +1245,7 @@ const StudentDashboard2 = () => {
 
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Father Course
+                          Father Course <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1259,7 +1266,7 @@ const StudentDashboard2 = () => {
 
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Father Year Graduated
+                          Father Year Graduated <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1281,7 +1288,7 @@ const StudentDashboard2 = () => {
 
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Father School Address
+                          Fathter School Address <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1305,7 +1312,7 @@ const StudentDashboard2 = () => {
                   <Typography
                     sx={{
                       fontSize: "20px",
-                      color: "#6D2323",
+                      color: mainButtonColor,
                       fontWeight: "bold",
                       mt: 3,
                     }}
@@ -1319,7 +1326,7 @@ const StudentDashboard2 = () => {
                     {/* Father Contact */}
                     <Box flex={1} display="flex" flexDirection="column">
                       <Typography variant="subtitle2" mb={0.5}>
-                        Father Contact
+                        Father Contact <span style={{ color: "red" }}>*</span>
                       </Typography>
 
                       <TextField
@@ -1343,7 +1350,7 @@ const StudentDashboard2 = () => {
                           errors.father_contact && "This field is required."
                         }
                         InputProps={{
-                          readOnly: true,
+
                           startAdornment: (
                             <Typography sx={{ mr: 1, fontWeight: "bold" }}>
                               +63
@@ -1356,10 +1363,10 @@ const StudentDashboard2 = () => {
                     {/* Father Occupation */}
                     <Box flex={1}>
                       <Typography variant="subtitle2" mb={0.5}>
-                        Father Occupation
+                        Father Occupation <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
-                        InputProps={{ readOnly: true }}
+
                         fullWidth
                         size="small"
                         required
@@ -1380,10 +1387,10 @@ const StudentDashboard2 = () => {
                     {/* Father Employer */}
                     <Box flex={1}>
                       <Typography variant="subtitle2" mb={0.5}>
-                        Father Employer
+                        Father Employer <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
-                        InputProps={{ readOnly: true }}
+
                         fullWidth
                         size="small"
                         required
@@ -1404,7 +1411,7 @@ const StudentDashboard2 = () => {
                     {/* Father Income */}
                     <Box flex={1}>
                       <Typography variant="subtitle2" mb={0.5}>
-                        Father Income
+                        Father Income <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         InputProps={{ readOnly: true }}
@@ -1438,7 +1445,7 @@ const StudentDashboard2 = () => {
                       Father Email Address
                     </Typography>
                     <TextField
-                      InputProps={{ readOnly: true }}
+
                       fullWidth
                       size="small"
                       required
@@ -1517,12 +1524,16 @@ const StudentDashboard2 = () => {
                   <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={1}>
-                        Mother Family Name
+                        Mother Last Name <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         fullWidth
                         size="small"
                         required
+                        InputProps={{
+                          readOnly: true,
+                          sx: { textTransform: "uppercase" } // must be inside InputProps
+                        }}
                         name="mother_family_name"
                         placeholder="Enter your Mother Last Name"
                         value={person.mother_family_name ?? ""}
@@ -1539,12 +1550,16 @@ const StudentDashboard2 = () => {
 
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={1}>
-                        Mother First Name
+                        Mother First Name <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         fullWidth
                         size="small"
                         required
+                        InputProps={{
+                          readOnly: true,
+                          sx: { textTransform: "uppercase" } // must be inside InputProps
+                        }}
                         name="mother_given_name"
                         placeholder="Enter your Mother First Name"
                         value={person.mother_given_name ?? ""}
@@ -1566,6 +1581,10 @@ const StudentDashboard2 = () => {
                       <TextField
                         fullWidth
                         size="small"
+                        InputProps={{
+                          readOnly: true,
+                          sx: { textTransform: "uppercase" } // must be inside InputProps
+                        }}
                         required
                         name="mother_middle_name"
                         placeholder="Enter your Mother Middle Name"
@@ -1584,7 +1603,7 @@ const StudentDashboard2 = () => {
                     {/* Mother Extension */}
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={1}>
-                        Mother Extension
+                        Mother Extension <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <FormControl fullWidth size="small">
                         <InputLabel id="mother-ext-label">Extension</InputLabel>
@@ -1613,7 +1632,7 @@ const StudentDashboard2 = () => {
 
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={1}>
-                        Mother Nickname
+                        Mother Income <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         fullWidth
@@ -1637,7 +1656,7 @@ const StudentDashboard2 = () => {
                   <Typography
                     sx={{
                       fontSize: "20px",
-                      color: "#6D2323",
+                      color: mainButtonColor,
                       fontWeight: "bold",
                       mt: 3,
                     }}
@@ -1660,12 +1679,12 @@ const StudentDashboard2 = () => {
                           mother_education: isChecked ? 1 : 0,
                           ...(isChecked
                             ? {
-                                mother_education_level: "",
-                                mother_last_school: "",
-                                mother_course: "",
-                                mother_year_graduated: "",
-                                mother_school_address: "",
-                              }
+                              mother_education_level: "",
+                              mother_last_school: "",
+                              mother_course: "",
+                              mother_year_graduated: "",
+                              mother_school_address: "",
+                            }
                             : {}),
                         };
 
@@ -1687,7 +1706,7 @@ const StudentDashboard2 = () => {
                     >
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Mother Education Level
+                          Mother Education Level <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1708,7 +1727,7 @@ const StudentDashboard2 = () => {
 
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Mother Last School
+                          Mother Last School <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1729,7 +1748,7 @@ const StudentDashboard2 = () => {
 
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Mother Course
+                          Mother Course <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1750,7 +1769,7 @@ const StudentDashboard2 = () => {
 
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Mother Year Graduated
+                          Mother Year Graduated <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1772,7 +1791,7 @@ const StudentDashboard2 = () => {
 
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" mb={1}>
-                          Mother School Address
+                          Mother School Address <span style={{ color: "red" }}>*</span>
                         </Typography>
                         <TextField
                           fullWidth
@@ -1796,7 +1815,7 @@ const StudentDashboard2 = () => {
                   <Typography
                     sx={{
                       fontSize: "20px",
-                      color: "#6D2323",
+                      color: mainButtonColor,
                       fontWeight: "bold",
                       mt: 3,
                     }}
@@ -1809,7 +1828,7 @@ const StudentDashboard2 = () => {
                   <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={0.5}>
-                        Mother Contact
+                        Mother Contact <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         fullWidth
@@ -1828,7 +1847,7 @@ const StudentDashboard2 = () => {
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={0.5}>
-                        Mother Occupation
+                        Mother Occupation <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         fullWidth
@@ -1849,7 +1868,7 @@ const StudentDashboard2 = () => {
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={0.5}>
-                        Mother Employer
+                        Mother Employer <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         fullWidth
@@ -1872,7 +1891,7 @@ const StudentDashboard2 = () => {
                     {/* Mother Income */}
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" mb={0.5}>
-                        Mother Income
+                        Mother Income <span style={{ color: "red" }}>*</span>
                       </Typography>
                       <TextField
                         fullWidth
@@ -1968,12 +1987,16 @@ const StudentDashboard2 = () => {
               {/* Guardian Family Name */}
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" mb={1}>
-                  Guardian Family Name
+                  Guardian Last Name <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
                   size="small"
                   required
+                  InputProps={{
+                    readOnly: true,
+                    sx: { textTransform: "uppercase" } // must be inside InputProps
+                  }}
                   name="guardian_family_name"
                   placeholder="Enter your Guardian Family Name"
                   value={person.guardian_family_name ?? ""}
@@ -1989,11 +2012,15 @@ const StudentDashboard2 = () => {
               {/* Guardian First Name */}
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" mb={1}>
-                  Guardian First Name
+                  Guardian First Name <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
                   size="small"
+                  InputProps={{
+                    readOnly: true,
+                    sx: { textTransform: "uppercase" } // must be inside InputProps
+                  }}
                   required
                   name="guardian_given_name"
                   placeholder="Enter your Guardian First Name"
@@ -2016,6 +2043,10 @@ const StudentDashboard2 = () => {
                   fullWidth
                   size="small"
                   required
+                  InputProps={{
+                    readOnly: true,
+                    sx: { textTransform: "uppercase" } // must be inside InputProps
+                  }}
                   name="guardian_middle_name"
                   placeholder="Enter your Guardian Middle Name"
                   value={person.guardian_middle_name ?? ""}
@@ -2102,7 +2133,7 @@ const StudentDashboard2 = () => {
 
             <Box sx={{ width: "100%", mb: 2 }}>
               <Typography variant="subtitle2" mb={1}>
-                Guardian Address
+                Guardian Address <span style={{ color: "red" }}>*</span>
               </Typography>
               <TextField
                 fullWidth
@@ -2123,7 +2154,7 @@ const StudentDashboard2 = () => {
             <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap" }}>
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" mb={1}>
-                  Guardian Contact
+                  Guardian Contact <span style={{ color: "red" }}>*</span>
                 </Typography>
                 <TextField
                   fullWidth
@@ -2173,7 +2204,7 @@ const StudentDashboard2 = () => {
             {/* Annual Income */}
             <Box sx={{ width: "100%", mb: 2 }}>
               <Typography variant="subtitle2" mb={1}>
-                Annual Income
+                Annual Income <span style={{ color: "red" }}>*</span>
               </Typography>
               <FormControl
                 fullWidth
@@ -2222,6 +2253,17 @@ const StudentDashboard2 = () => {
                 variant="contained"
                 component={Link}
                 to="/student_dashboard1"
+                onClick={() => {
+                  handleUpdate(person);
+
+                  if (isFormValid()) {
+                    navigate("/student_dashboard1");
+                  } else {
+                    showSnackbar(
+                      "Please complete all required fields before proceeding.",
+                    );
+                  }
+                }}
                 startIcon={
                   <ArrowBackIcon
                     sx={{
@@ -2250,8 +2292,15 @@ const StudentDashboard2 = () => {
               <Button
                 variant="contained"
                 onClick={() => {
-                  handleUpdate();
-                  navigate("/student_dashboard3");
+                  handleUpdate(person);
+
+                  if (isFormValid()) {
+                    navigate("/student_dashboard3");
+                  } else {
+                    showSnackbar(
+                      "Please complete all required fields before proceeding.",
+                    );
+                  }
                 }}
                 endIcon={
                   <ArrowForwardIcon
