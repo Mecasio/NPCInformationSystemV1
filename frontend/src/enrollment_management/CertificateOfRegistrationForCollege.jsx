@@ -32,6 +32,10 @@ import { MdOutlinePayment } from "react-icons/md";
 import { IoMdSchool } from "react-icons/io";
 import API_BASE_URL from "../apiConfig";
 import { postAuditEvent } from "../utils/auditEvents";
+import {
+  isRegistrarCurriculumMatch,
+  restrictToRegistrarCurriculum,
+} from "../utils/registrarCurriculumRestriction";
 
 const CertificateOfRegistrationForCollege = forwardRef(
 
@@ -497,6 +501,10 @@ const CertificateOfRegistrationForCollege = forwardRef(
             lastName: last_name,
           } = tagged;
 
+          if (!isRegistrarCurriculumMatch(active_curriculum)) {
+            return;
+          }
+
           console.log("data[0]:", data[0]);
           console.log(course_unit);
 
@@ -638,7 +646,7 @@ const CertificateOfRegistrationForCollege = forwardRef(
           const response = await axios.get(
             `${API_BASE_URL}/api/applied_program`,
           );
-          setCurriculumOptions(response.data);
+          setCurriculumOptions(restrictToRegistrarCurriculum(response.data));
         } catch (error) {
           console.error("Error fetching curriculum options:", error);
         }

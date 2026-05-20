@@ -191,7 +191,7 @@ const RegisterRegistrar = () => {
         access_level: "",
         profile_picture: null,
         preview: "",
-        program_id: "",
+        curriculum_id: "",
 
     });
     const [itemsPerPage, setItemsPerPage] = useState(50);
@@ -346,11 +346,11 @@ const RegisterRegistrar = () => {
             if (form.status) fd.set("status", Number(form.status));
             if (form.access_level) fd.set("access_level", Number(form.access_level));
 
-            // ✅ ADD THIS — send program_id as number or delete it if empty
-            if (form.program_id && form.program_id !== "") {
-                fd.set("program_id", Number(form.program_id));
+            // Send the selected curriculum id, or omit it when no program is selected.
+            if (form.curriculum_id && form.curriculum_id !== "") {
+                fd.set("curriculum_id", Number(form.curriculum_id));
             } else {
-                fd.delete("program_id"); // don't send empty string, let backend default to NULL
+                fd.delete("curriculum_id");
             }
             // Debug
             for (let pair of fd.entries()) console.log(pair[0], pair[1]);
@@ -426,7 +426,7 @@ const RegisterRegistrar = () => {
             status: Number(r.status), // ✅ ensure numeric
             dprtmnt_id: r.dprtmnt_id || "",
             access_level: r.access_level || "",
-            program_id: r.program_id || "",
+            curriculum_id: r.curriculum_id || "",
         });
         setOpenDialog(true);
     };
@@ -798,7 +798,7 @@ const RegisterRegistrar = () => {
                                                 status: "",
                                                 dprtmnt_id: "",
                                                 access_level: "",
-                                                program_id: "",          // ✅
+                                                curriculum_id: "",
                                                 profile_picture: null,   // ✅
                                                 preview: "",             // ✅
                                             });
@@ -944,7 +944,7 @@ const RegisterRegistrar = () => {
                                     </TableCell>
                                     <TableCell sx={{ textAlign: "center", border: `1px solid ${borderColor}` }}>
                                         {r.program_description
-                                            ? `${r.program_description}${r.major ? ` — ${r.major}` : ""} (${r.program_code})`
+                                            ? `${r.program_description}${r.major ? ` — ${r.major}` : ""} (${r.program_code}${r.current_year ? `, ${r.current_year}-${r.next_year}` : ""})`
                                             : "N/A"
                                         }
                                     </TableCell>
@@ -1211,7 +1211,7 @@ const RegisterRegistrar = () => {
                                 name="dprtmnt_id"
                                 value={form.dprtmnt_id}          // ← also missing value!
                                 label="Department"
-                                onChange={(e) => setForm({ ...form, dprtmnt_id: e.target.value, program_id: "" })}
+                                onChange={(e) => setForm({ ...form, dprtmnt_id: e.target.value, curriculum_id: "" })}
                             >
                                 <MenuItem value="">Select Department</MenuItem>
                                 {department.map((dep) => (
@@ -1224,23 +1224,23 @@ const RegisterRegistrar = () => {
 
                         {/* Program (optional) — only shows programs linked to selected department */}
                         <FormControl fullWidth size="small">
-                            <InputLabel>Program (Optional)</InputLabel>
+                            <InputLabel>Curriculum (Optional)</InputLabel>
                             <Select
-                                value={form.program_id}
-                                label="Program (Optional)"
-                                onChange={(e) => setForm({ ...form, program_id: e.target.value })}
+                                value={form.curriculum_id}
+                                label="Curriculum (Optional)"
+                                onChange={(e) => setForm({ ...form, curriculum_id: e.target.value })}
                                 disabled={!form.dprtmnt_id}  // disabled until department is chosen
                             >
-                                <MenuItem value="">Select Program</MenuItem>
+                                <MenuItem value="">Select Curriculum</MenuItem>
                                 {[...new Map(
                                     programs
                                         .filter((p) => String(p.dprtmnt_id) === String(form.dprtmnt_id))
-                                        .map((p) => [p.program_id, p])   // key by program_id to dedupe
+                                        .map((p) => [p.curriculum_id, p])
                                 ).values()].map((p) => (
-                                    <MenuItem key={p.program_id} value={p.program_id}>
+                                    <MenuItem key={p.curriculum_id} value={p.curriculum_id}>
                                         {p.program_description}
                                         {p.major ? ` — ${p.major}` : ""}
-                                        {` (${p.program_code})`}
+                                        {` (${p.program_code}${p.current_year ? `, ${p.current_year}-${p.next_year}` : ""})`}
                                     </MenuItem>
                                 ))}
                             </Select>

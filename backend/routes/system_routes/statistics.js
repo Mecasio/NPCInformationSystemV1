@@ -608,9 +608,32 @@ router.get("/api/accepted-students-count", async (req, res) => {
   try {
     const [rows] = await db3.execute(`
       SELECT COUNT(*) AS total
-      FROM person_table p
-      JOIN person_status_table ps ON p.person_id = ps.person_id
-      WHERE ps.student_registration_status = 1
+      FROM student_numbering_table;
+    `);
+
+    res.json(rows[0]); // { total: 25 }
+  } catch (err) {
+    console.error("Error fetching accepted students count:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+router.get("/api/current-enrolled-students-count", async (req, res) => {
+  try {
+    const [rows] = await db3.execute(`
+      SELECT COUNT(DISTINCT p.person_id) AS total
+        FROM person_table p
+        JOIN person_status_table ps 
+          ON p.person_id = ps.person_id
+        JOIN student_numbering_table snt 
+          ON p.person_id = snt.person_id
+        JOIN student_status_table sst 
+          ON snt.student_number = sst.student_number
+        JOIN active_school_year_table sy 
+          ON sst.active_school_year_id = sy.id
+        WHERE ps.student_registration_status = 1
+          AND sst.enrolled_status = 1
+          AND sy.astatus = 1;
     `);
 
     res.json(rows[0]); // { total: 25 }

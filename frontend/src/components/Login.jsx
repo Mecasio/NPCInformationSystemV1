@@ -110,6 +110,7 @@ const Login = ({ setIsAuthenticated }) => {
       localStorage.setItem("person_id", response.data.person_id);
       localStorage.setItem("prof_id", response.data.prof_id || "");
       localStorage.setItem("employee_id", response.data.employee_id || "");
+      localStorage.setItem("curriculum_id", response.data.curriculum_id || "");
       localStorage.setItem("first_name", response.data.first_name || "");
       localStorage.setItem("last_name", response.data.last_name || "");
       localStorage.setItem("middle_name", response.data.middle_name || "");

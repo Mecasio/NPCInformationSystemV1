@@ -563,16 +563,21 @@ router.get("/api/registrars", async (req, res) => {
         at.access_description,
         ua.role,
         ua.status,
-        ua.program_id,
+        ua.program_id AS curriculum_id,
+        pt.program_id,
         d.dprtmnt_name,
         d.dprtmnt_code,
         pt.program_description,
         pt.program_code,
-        pt.major
+        pt.major,
+        yt.year_description AS current_year,
+        yt.year_description + 1 AS next_year
       FROM user_accounts ua
       INNER JOIN access_table at ON ua.access_level = at.access_id
       LEFT JOIN dprtmnt_table d ON ua.dprtmnt_id = d.dprtmnt_id
-      LEFT JOIN program_table pt ON ua.program_id = pt.program_id
+      LEFT JOIN curriculum_table ct ON ua.program_id = ct.curriculum_id
+      LEFT JOIN program_table pt ON ct.program_id = pt.program_id
+      LEFT JOIN year_table yt ON ct.year_id = yt.year_id
       ORDER BY ua.id DESC;
     `;
 

@@ -36,6 +36,10 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import IconButton from "@mui/material/IconButton";
 import CloseIcon from "@mui/icons-material/Close";
 import { Snackbar, Alert } from "@mui/material";
+import {
+  isRegistrarCurriculumMatch,
+  restrictToRegistrarCurriculum,
+} from "../utils/registrarCurriculumRestriction";
 
 
 const InterviewerApplicantList = () => {
@@ -260,7 +264,9 @@ const InterviewerApplicantList = () => {
       });
 
       setInterviewerData(data[0]?.schedule || null);
-      setApplicants(data[0]?.applicants || []);
+      setApplicants((data[0]?.applicants || []).filter((applicant) =>
+        isRegistrarCurriculumMatch(applicant.program)
+      ));
     } catch (err) {
       console.error(err);
     }
@@ -275,7 +281,7 @@ const InterviewerApplicantList = () => {
       try {
         const response = await axios.get(`${API_BASE_URL}/api/applied_program`);
         console.log("✅ curriculumOptions:", response.data); // <--- add this
-        setCurriculumOptions(response.data);
+        setCurriculumOptions(restrictToRegistrarCurriculum(response.data));
       } catch (error) {
         console.error("Error fetching curriculum options:", error);
       }

@@ -33,6 +33,7 @@ import LoadingOverlay from "../components/LoadingOverlay"
 import ListAltIcon from "@mui/icons-material/ListAlt";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
+import { isRegistrarCurriculumMatch } from "../utils/registrarCurriculumRestriction";
 import PersonSearchIcon from "@mui/icons-material/PersonSearch";
 import PersonIcon from "@mui/icons-material/Person";
 import { postAuditEvent } from "../utils/auditEvents";
@@ -303,7 +304,16 @@ const SearchCorForCollege = () => {
                         : Promise.resolve(null),
                 ]);
                 const data = await res.json();
-                setCorPreload(preloadRes?.data || null);
+                const preloadData = preloadRes?.data || null;
+                if (preloadData && !isRegistrarCurriculumMatch(preloadData.activeCurriculum)) {
+                    setSelectedStudent(null);
+                    setStudentData([]);
+                    setStudentDetails([]);
+                    setCorPreload(null);
+                    showSnackbar("This student is outside your assigned curriculum.", "error");
+                    return;
+                }
+                setCorPreload(preloadData);
 
                 console.log("Fetched student data:", data);
                 if (data) {

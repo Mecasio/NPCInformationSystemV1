@@ -39,6 +39,11 @@ import regions from "../data/region.json";
 import provinces from "../data/province.json";
 import cities from "../data/city.json";
 import barangays from "../data/barangay.json";
+import {
+  getRegistrarCurriculumId,
+  hasRegistrarCurriculumRestriction,
+  restrictToRegistrarCurriculum,
+} from "../utils/registrarCurriculumRestriction";
 import { useNavigate } from "react-router-dom";
 import Search from "@mui/icons-material/Search";
 import { motion } from "framer-motion";
@@ -1312,12 +1317,14 @@ const OfficialStudentDashboard1 = () => {
   }, [person.permanentMunicipality]);
 
   const [curriculumOptions, setCurriculumOptions] = useState([]);
+  const isProgramLocked = hasRegistrarCurriculumRestriction();
+  const registrarCurriculumId = getRegistrarCurriculumId();
 
   useEffect(() => {
     const fetchCurriculums = async () => {
       try {
         const response = await axios.get(`${API_BASE_URL}/api/applied_program`);
-        setCurriculumOptions(response.data); // array of { curriculum_id: "..." }
+        setCurriculumOptions(restrictToRegistrarCurriculum(response.data)); // array of { curriculum_id: "..." }
       } catch (error) {
         console.error("Error fetching curriculum options:", error);
       }
@@ -2383,14 +2390,17 @@ const OfficialStudentDashboard1 = () => {
                       <InputLabel>Course Applied</InputLabel>
                       <Select
                         name="program"
-                        value={person.program || ""}
+                        value={isProgramLocked ? registrarCurriculumId : person.program || ""}
                         onBlur={() => handleUpdate(person)}
                         onChange={handleChange}
+                        disabled={isProgramLocked}
                         label="Program"
                       >
-                        <MenuItem value="">
-                          <em>Select Program</em>
-                        </MenuItem>
+                        {!isProgramLocked && (
+                          <MenuItem value="">
+                            <em>Select Program</em>
+                          </MenuItem>
+                        )}
                         {filteredCurriculum.map((item, index) => (
                           <MenuItem key={index} value={item.curriculum_id}>
                             {`(${item.program_code}): ${item.program_description}${

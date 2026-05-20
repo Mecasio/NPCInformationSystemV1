@@ -32,6 +32,7 @@ import AddIcon from "@mui/icons-material/Add";
 import API_BASE_URL from "../apiConfig";
 import ScoreIcon from "@mui/icons-material/Score";
 import { postAuditEvent } from "../utils/auditEvents";
+import { isRegistrarCurriculumMatch } from "../utils/registrarCurriculumRestriction";
 
 /* ─── Design tokens ─── */
 const TOKEN = {
@@ -621,6 +622,11 @@ const CourseTaggingForSummerCollege = () => {
         { headers: { "Content-Type": "application/json" } }
       );
       const { token2, isEnrolled, person_id2, studentNumber: studentNum, section, activeCurriculum: effectiveProgram, yearLevel, courseCode: courseCode, courseDescription: courseDescription, firstName: first_name, middleName: middle_name, lastName: last_name, applyingAs: applyingAsValue } = response.data;
+      if (!isRegistrarCurriculumMatch(effectiveProgram)) {
+        setApplyingAs(""); setUserId(null); setCurr(null); setCourses([]); setEnrolled([]); setSectionDescription("");
+        setSnack({ open: true, message: "This student is outside your assigned curriculum.", severity: "error" });
+        return;
+      }
       setStorageValue("token2", token2); setStorageValue("person_id2", person_id2); setStorageValue("studentNumber", studentNum); setStorageValue("activeCurriculum", effectiveProgram); setStorageValue("yearLevel", yearLevel); setStorageValue("courseCode", courseCode); setStorageValue("courseDescription", courseDescription); setStorageValue("firstName", first_name); setStorageValue("middleName", middle_name); setStorageValue("lastName", last_name); setStorageValue("section", section); setStorageValue("isEnrolled", isEnrolled);
       setUserId(cleanDisplayValue(studentNum)); setUserFirstName(cleanDisplayValue(first_name)); setUserMiddleName(cleanDisplayValue(middle_name)); setUserLastName(cleanDisplayValue(last_name)); setApplyingAs(cleanDisplayValue(applyingAsValue)); setCurr(cleanDisplayValue(effectiveProgram)); setCourseCode(cleanDisplayValue(courseCode)); setCourseDescription(cleanDisplayValue(courseDescription)); setPersonID(cleanDisplayValue(person_id2)); setSectionDescription(cleanDisplayValue(section)); setIsEnrolled(isEnrolled);
       await logStudentBasicInfoSearch({ studentNumber: studentNum, firstName: first_name, middleName: middle_name, lastName: last_name });

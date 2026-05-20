@@ -43,6 +43,11 @@ import Unauthorized from "../components/Unauthorized";
 import LoadingOverlay from "../components/LoadingOverlay";
 import SearchIcon from "@mui/icons-material/Search";
 import API_BASE_URL from "../apiConfig";
+import {
+  hasRegistrarCurriculumRestriction,
+  isRegistrarCurriculumMatch,
+  restrictToRegistrarCurriculum,
+} from "../utils/registrarCurriculumRestriction";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import ScoreIcon from "@mui/icons-material/Score";
 import DateField from "../components/DateField";
@@ -498,7 +503,7 @@ const ApplicantList = () => {
         const response = await axios.get(
           `${API_BASE_URL}/api/applied_program/${adminData.dprtmnt_id}`,
         );
-        setCurriculumOptions(response.data);
+        setCurriculumOptions(restrictToRegistrarCurriculum(response.data));
       } catch (error) {
         console.error("Error fetching curriculum options:", error);
       }
@@ -545,6 +550,17 @@ const ApplicantList = () => {
     )
       ? selectedProgramFilter
       : "";
+  const isProgramLocked = hasRegistrarCurriculumRestriction();
+
+  useEffect(() => {
+    if (!isProgramLocked) return;
+    const assignedCurriculum = curriculumOptions.find((prog) =>
+      isRegistrarCurriculumMatch(prog.curriculum_id),
+    );
+    if (assignedCurriculum?.program_code) {
+      setSelectedProgramFilter(assignedCurriculum.program_code);
+    }
+  }, [curriculumOptions, isProgramLocked]);
 
   useEffect(() => {
     axios
@@ -660,6 +676,9 @@ const ApplicantList = () => {
         (opt) =>
           opt.curriculum_id?.toString() === personData.program?.toString(),
       );
+      const matchesRegistrarCurriculum = isRegistrarCurriculumMatch(
+        personData.program,
+      );
 
       const matchesProgram =
         selectedProgramFilter === "" ||
@@ -725,6 +744,7 @@ const ApplicantList = () => {
         matchesSubmittedDocs &&
         matchesDepartment &&
         matchesProgram &&
+        matchesRegistrarCurriculum &&
         matchesSchoolYear &&
         matchesSemester &&
         matchesDateRange
@@ -894,8 +914,9 @@ const ApplicantList = () => {
 
   useEffect(() => {
     axios.get(`${API_BASE_URL}/api/applied_program`).then((res) => {
-      setAllCurriculums(res.data);
-      setCurriculumOptions(res.data);
+      const restrictedCurriculums = restrictToRegistrarCurriculum(res.data);
+      setAllCurriculums(restrictedCurriculums);
+      setCurriculumOptions(restrictedCurriculums);
     });
   }, []);
 
@@ -916,7 +937,7 @@ const ApplicantList = () => {
         allCurriculums.filter((opt) => opt.dprtmnt_name === selectedDept),
       );
     }
-    setSelectedProgramFilter("");
+    if (!isProgramLocked) setSelectedProgramFilter("");
   };
 
   const [applicants, setApplicants] = useState([]);
@@ -1743,9 +1764,10 @@ const ApplicantList = () => {
                 <Select
                   value={selectedProgramFilterValue}
                   onChange={(e) => setSelectedProgramFilter(e.target.value)}
+                  disabled={isProgramLocked}
                   displayEmpty
                 >
-                  <MenuItem value="">All Programs</MenuItem>
+                  {!isProgramLocked && <MenuItem value="">All Programs</MenuItem>}
                   {curriculumOptions.map((prog) => (
                     <MenuItem
                       key={prog.curriculum_id}

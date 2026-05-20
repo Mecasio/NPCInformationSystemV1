@@ -869,7 +869,8 @@ router.post("/login", async (req, res) => {
           ua.status AS status,
           'user' AS source,
           ua.dprtmnt_id,
-          dt.dprtmnt_name
+          dt.dprtmnt_name,
+          ua.program_id AS curriculum_id
         FROM user_accounts AS ua
         LEFT JOIN dprtmnt_table AS dt ON ua.dprtmnt_id = dt.dprtmnt_id
         LEFT JOIN student_numbering_table AS snt ON snt.person_id = ua.person_id
@@ -893,7 +894,8 @@ router.post("/login", async (req, res) => {
           ua.status,
           'prof' AS source,
           NULL AS dprtmnt_id,
-          NULL AS dprtmnt_name
+          NULL AS dprtmnt_name,
+          NULL AS curriculum_id
        FROM prof_table AS ua
 WHERE (ua.email = ? OR ua.employee_id = ?)
       );
@@ -1008,6 +1010,7 @@ WHERE (ua.email = ? OR ua.employee_id = ?)
         email: user.email,
         role: user.role,
         department: user.dprtmnt_id,
+        curriculum_id: user.curriculum_id,
         prof_id: user.source === "prof" ? user.account_id : null,
         accessList,
       },
@@ -1078,6 +1081,7 @@ WHERE (ua.email = ? OR ua.employee_id = ?)
         prof_id: user.source === "prof" ? user.account_id : null,
         employee_id: user.employee_id,
         department: user.dprtmnt_id,
+        curriculum_id: user.curriculum_id,
         accessList,
       });
     }
@@ -1103,6 +1107,7 @@ WHERE (ua.email = ? OR ua.employee_id = ?)
       prof_id: user.source === "prof" ? user.account_id : null,
       employee_id: user.employee_id,
       department: user.dprtmnt_id,
+      curriculum_id: user.curriculum_id,
       accessList,
     });
   } catch (error) {

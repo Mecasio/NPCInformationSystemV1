@@ -43,6 +43,11 @@ import API_BASE_URL from "../apiConfig";
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ScoreIcon from '@mui/icons-material/Score';
 import CloseIcon from "@mui/icons-material/Close";
+import {
+    hasRegistrarCurriculumRestriction,
+    isRegistrarCurriculumMatch,
+    restrictToRegistrarCurriculum,
+} from "../utils/registrarCurriculumRestriction";
 import PersonIcon from "@mui/icons-material/Person";
 
 const StudentNumbering = () => {
@@ -284,6 +289,7 @@ const StudentNumbering = () => {
     const [curriculumOptions, setCurriculumOptions] = useState([]);
     const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState("");
     const [selectedProgramFilter, setSelectedProgramFilter] = useState("");
+    const isProgramLocked = hasRegistrarCurriculumRestriction();
     const [selectedCampus, setSelectedCampus] = useState("");
     const [department, setDepartment] = useState([]);
     const [allCurriculums, setAllCurriculums] = useState([]);
@@ -391,8 +397,9 @@ const StudentNumbering = () => {
     useEffect(() => {
         axios.get(`${API_BASE_URL}/api/applied_program`)
             .then(res => {
-                setAllCurriculums(res.data);
-                setCurriculumOptions(res.data);
+                const restrictedCurriculums = restrictToRegistrarCurriculum(res.data);
+                setAllCurriculums(restrictedCurriculums);
+                setCurriculumOptions(restrictedCurriculums);
             });
     }, []);
 
@@ -417,7 +424,7 @@ const StudentNumbering = () => {
         const fetchCurriculums = async () => {
             try {
                 const response = await axios.get(`${API_BASE_URL}/api/applied_program/${adminData.dprtmnt_id}`);
-                setCurriculumOptions(response.data);
+                setCurriculumOptions(restrictToRegistrarCurriculum(response.data));
 
             } catch (error) {
                 console.error("Error fetching curriculum options:", error);
@@ -486,6 +493,9 @@ const StudentNumbering = () => {
             const programInfo = allCurriculums.find(
                 (opt) => opt.curriculum_id?.toString() === personData.program?.toString()
             );
+            const matchesRegistrarCurriculum = isRegistrarCurriculumMatch(
+                personData.program
+            );
 
             const matchesProgram =
                 selectedProgramFilter === "" ||
@@ -511,6 +521,7 @@ const StudentNumbering = () => {
             return (
                 matchesSearch &&
                 matchesCampus &&
+                matchesRegistrarCurriculum &&
                 matchesDepartment &&
                 matchesProgram &&
                 matchesSchoolYear &&
@@ -640,6 +651,16 @@ const StudentNumbering = () => {
     };
 
     useEffect(() => {
+        if (!isProgramLocked) return;
+        const assignedCurriculum = curriculumOptions.find((prog) =>
+            isRegistrarCurriculumMatch(prog.curriculum_id)
+        );
+        if (assignedCurriculum?.program_code) {
+            setSelectedProgramFilter(assignedCurriculum.program_code);
+        }
+    }, [curriculumOptions, isProgramLocked]);
+
+    useEffect(() => {
         if (department.length > 0 && !selectedDepartmentFilter) {
             const firstDept = department[0].dprtmnt_name;
             setSelectedDepartmentFilter(firstDept);
@@ -656,7 +677,7 @@ const StudentNumbering = () => {
                 allCurriculums.filter(opt => opt.dprtmnt_name === selectedDept)
             );
         }
-        setSelectedProgramFilter("");
+        if (!isProgramLocked) setSelectedProgramFilter("");
     };
 
     // // 🔒 Disable right-click
@@ -1258,12 +1279,13 @@ const StudentNumbering = () => {
                         <Box display="flex" alignItems="center" gap={1}>
                             <Typography fontSize={13} sx={{ minWidth: "100px" }}>Program:</Typography>
                             <FormControl size="small" sx={{ width: "350px" }}>
-                                <Select
-                                    value={selectedProgramFilter}
-                                    onChange={(e) => setSelectedProgramFilter(e.target.value)}
-                                    displayEmpty
-                                >
-                                    <MenuItem value="">All Programs</MenuItem>
+                                    <Select
+                                        value={selectedProgramFilter}
+                                        onChange={(e) => setSelectedProgramFilter(e.target.value)}
+                                        disabled={isProgramLocked}
+                                        displayEmpty
+                                    >
+                                    {!isProgramLocked && <MenuItem value="">All Programs</MenuItem>}
                                     {curriculumOptions.map((prog) => (
                                         <MenuItem key={prog.curriculum_id} value={prog.program_code}>
                                             {prog.program_code} - {prog.program_description}

@@ -42,6 +42,11 @@ import MenuBookIcon from "@mui/icons-material/MenuBook";
 import SchoolIcon from "@mui/icons-material/School";
 import PersonSearchIcon from "@mui/icons-material/PersonSearch";
 import AssignmentIcon from "@mui/icons-material/Assignment";
+import {
+    hasRegistrarCurriculumRestriction,
+    isRegistrarCurriculumMatch,
+    restrictToRegistrarCurriculum,
+} from "../utils/registrarCurriculumRestriction";
 
 const StudentListForEnrollment = () => {
     const socket = useRef(null);
@@ -359,6 +364,7 @@ const StudentListForEnrollment = () => {
     const [selectedRegistrarStatus, setSelectedRegistrarStatus] = useState("");
     const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState("");
     const [selectedProgramFilter, setSelectedProgramFilter] = useState("");
+    const isProgramLocked = hasRegistrarCurriculumRestriction();
     const [department, setDepartment] = useState([]);
     const [allCurriculums, setAllCurriculums] = useState([]);
     const [schoolYears, setSchoolYears] = useState([]);
@@ -474,6 +480,9 @@ const StudentListForEnrollment = () => {
             const programInfo = allCurriculums.find(
                 (opt) => opt.curriculum_id?.toString() === personData.curriculum_id?.toString()
             );
+            const matchesRegistrarCurriculum = isRegistrarCurriculumMatch(
+                personData.curriculum_id
+            );
 
             const matchesProgram = selectedProgramFilter === "" ||
                 String(programInfo?.program_id ?? "") === String(selectedProgramFilter) ||
@@ -494,6 +503,7 @@ const StudentListForEnrollment = () => {
             return (
                 matchesSearch &&
                 matchesCampus &&
+                matchesRegistrarCurriculum &&
                 matchesProgram &&
                 matchesDepartment &&
                 matchesSchoolYear &&
@@ -579,10 +589,21 @@ const StudentListForEnrollment = () => {
     }, [activePerson]);
 
     useEffect(() => {
+        if (!isProgramLocked) return;
+        const assignedCurriculum = curriculumOptions.find((prog) =>
+            isRegistrarCurriculumMatch(prog.curriculum_id)
+        );
+        if (assignedCurriculum?.program_id) {
+            setSelectedProgramFilter(assignedCurriculum.program_id);
+        }
+    }, [curriculumOptions, isProgramLocked]);
+
+    useEffect(() => {
         axios.get(`${API_BASE_URL}/api/applied_program`)
             .then(res => {
-                setAllCurriculums(res.data);
-                setCurriculumOptions(res.data);
+                const restrictedCurriculums = restrictToRegistrarCurriculum(res.data);
+                setAllCurriculums(restrictedCurriculums);
+                setCurriculumOptions(restrictedCurriculums);
             });
     }, []);
 
@@ -595,7 +616,7 @@ const StudentListForEnrollment = () => {
                 allCurriculums.filter(opt => opt.dprtmnt_id === selectedDept)
             );
         }
-        setSelectedProgramFilter("");
+        if (!isProgramLocked) setSelectedProgramFilter("");
     };
 
     const divToPrintRef = useRef();
@@ -1121,9 +1142,10 @@ const StudentListForEnrollment = () => {
                                 <Select
                                     value={selectedProgramFilter}
                                     onChange={(e) => setSelectedProgramFilter(e.target.value)}
+                                    disabled={isProgramLocked}
                                     displayEmpty
                                 >
-                                    <MenuItem value="">All Programs</MenuItem>
+                                    {!isProgramLocked && <MenuItem value="">All Programs</MenuItem>}
                                     {curriculumOptions.map((prog) => (
                                         <MenuItem key={prog.curriculum_id} value={prog.program_id}>
                                             {prog.program_code} - {prog.program_description}

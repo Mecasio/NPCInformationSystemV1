@@ -18,7 +18,8 @@ import {
 } from "@mui/material";
 import SchoolIcon from "@mui/icons-material/School";
 import PersonIcon from "@mui/icons-material/Person";
-import { ArrowBackIos, ArrowForwardIos } from "@mui/icons-material";
+import MenuBookIcon from "@mui/icons-material/MenuBook";
+import { ArrowBackIos, ArrowForwardIos, MenuBook } from "@mui/icons-material";
 import {
   BarChart,
   Bar,
@@ -156,6 +157,7 @@ const Dashboard = ({ profileImage, setProfileImage }) => {
   const [studentCount, setStudentCount] = useState(0);
   const [yearLevelCounts, setYearLevelCounts] = useState([]);
   const [registrarCount, setRegistrarCount] = useState(0);
+  const [currentEnrolledStudentCount, setCurrentEnrolledStudentCount] = useState(0);
 
   useEffect(() => {
     axios
@@ -171,6 +173,10 @@ const Dashboard = ({ profileImage, setProfileImage }) => {
     axios
       .get(`${API_BASE_URL}/api/accepted-students-count`)
       .then((res) => setAcceptedCount(res.data.total))
+      .catch(console.error);
+    axios
+      .get(`${API_BASE_URL}/api/current-enrolled-students-count`)
+      .then((res) => setCurrentEnrolledStudentCount(res.data.total))
       .catch(console.error);
     axios
       .get(`${API_BASE_URL}/api/departments`)
@@ -446,8 +452,14 @@ const Dashboard = ({ profileImage, setProfileImage }) => {
 
   const stats = [
     {
-      label: "Enrolled Students",
+      label: "Total Students Record",
       value: acceptedCount,
+      icon: <MenuBookIcon fontSize="large" />,
+      color: "#84B082",
+    },
+    {
+      label: "Enrolled Students",
+      value: currentEnrolledStudentCount,
       icon: <SchoolIcon fontSize="large" />,
       color: "#84B082",
     },
@@ -633,7 +645,7 @@ const Dashboard = ({ profileImage, setProfileImage }) => {
         {/* ── Stats Row ── */}
         <Grid container spacing={2} sx={{ mb: 2 }}>
           {stats.map((stat, i) => (
-            <Grid item xs={12} sm={4} key={i}>
+            <Grid item xs={12} sm={3} key={i}>
               <Card
                 sx={{
                   ...cardSx,
@@ -682,7 +694,7 @@ const Dashboard = ({ profileImage, setProfileImage }) => {
           container
           spacing={2}
           alignItems="stretch"
-          sx={{ width: "100%", margin: 0, boxSizing: "border-box" }}
+          sx={{ width: "100%", boxSizing: "border-box" }}
         >
           {/* ── LEFT: Calendar + Bar Chart ── */}
           <Grid item xs={12} md={3} sx={{ display: "flex" }}>

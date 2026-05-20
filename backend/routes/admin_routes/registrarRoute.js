@@ -125,7 +125,7 @@ router.post("/register_registrar", upload.single("profile_picture"), async (req,
       status,
       dprtmnt_id,
       access_level,
-      program_id      // ✅ NEW
+      curriculum_id
     } = req.body;
 
     const file = req.file;
@@ -172,7 +172,7 @@ router.post("/register_registrar", upload.single("profile_picture"), async (req,
     }
 
     const deptValue = dprtmnt_id === "" ? null : dprtmnt_id;
-    const programValue = program_id && program_id !== "" ? Number(program_id) : null; // ✅ NEW
+    const curriculumValue = curriculum_id && curriculum_id !== "" ? Number(curriculum_id) : null;
 
     const [registrar] = await db3.query(
       `SELECT MAX(person_id) AS latest_person_id FROM user_accounts;`
@@ -180,7 +180,7 @@ router.post("/register_registrar", upload.single("profile_picture"), async (req,
 
     const personIdForRegistrar = registrar[0].latest_person_id;
 
-    // 💾 Save registrar — added program_id column
+    // Save the selected curriculum id in the existing user_accounts.program_id column.
     await db3.query(
       `INSERT INTO user_accounts 
        (person_id, employee_id, last_name, middle_name, first_name, role, email, password, status, dprtmnt_id, profile_picture, access_level, program_id)
@@ -198,7 +198,7 @@ router.post("/register_registrar", upload.single("profile_picture"), async (req,
         deptValue,
         profilePicName,
         Number(access_level),
-        programValue    // ✅ NEW
+        curriculumValue
       ]
     );
 
@@ -286,9 +286,9 @@ router.put("/update_registrar/:id", upload.single("profile_picture"), async (req
 
     const deptValue = data.dprtmnt_id === "" ? null : data.dprtmnt_id;
 
-    // ✅ NEW — resolve program_id: explicit empty string clears it, otherwise keep current
-    const programValue = data.program_id !== undefined
-      ? (data.program_id === "" ? null : Number(data.program_id))
+    // Resolve curriculum_id: explicit empty string clears it, otherwise keep current.
+    const curriculumValue = data.curriculum_id !== undefined
+      ? (data.curriculum_id === "" ? null : Number(data.curriculum_id))
       : (current.program_id ?? null);
 
     await db3.query(
@@ -306,7 +306,7 @@ router.put("/update_registrar/:id", upload.single("profile_picture"), async (req
         deptValue,
         finalFilename,
         data.access_level ? Number(data.access_level) : current.access_level,
-        programValue,   // ✅ NEW
+        curriculumValue,
         id
       ]
     );

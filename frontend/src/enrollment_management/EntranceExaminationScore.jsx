@@ -33,6 +33,11 @@ import PersonSearchIcon from "@mui/icons-material/PersonSearch";
 import PeopleIcon from "@mui/icons-material/People";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import _ from "lodash";
+import {
+    hasRegistrarCurriculumRestriction,
+    isRegistrarCurriculumMatch,
+    restrictToRegistrarCurriculum,
+} from "../utils/registrarCurriculumRestriction";
 import Unauthorized from "../components/Unauthorized";
 import LoadingOverlay from "../components/LoadingOverlay";
 import SearchIcon from "@mui/icons-material/Search";
@@ -492,6 +497,7 @@ const ApplicantScoringReadOnly = () => {
 
     const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState("");
     const [selectedProgramFilter, setSelectedProgramFilter] = useState("");
+    const isProgramLocked = hasRegistrarCurriculumRestriction();
     const [department, setDepartment] = useState([]);
     const [allCurriculums, setAllCurriculums] = useState([]);
     const selectedDepartmentFilterValue =
@@ -508,6 +514,16 @@ const ApplicantScoringReadOnly = () => {
             )
             ? selectedProgramFilter
             : "";
+
+    useEffect(() => {
+        if (!isProgramLocked) return;
+        const assignedCurriculum = curriculumOptions.find((prog) =>
+            isRegistrarCurriculumMatch(prog.curriculum_id)
+        );
+        if (assignedCurriculum?.program_code) {
+            setSelectedProgramFilter(assignedCurriculum.program_code);
+        }
+    }, [curriculumOptions, isProgramLocked]);
 
 
 
@@ -591,6 +607,9 @@ const ApplicantScoringReadOnly = () => {
 
             const programInfo = allCurriculums.find(
                 (opt) => opt.curriculum_id?.toString() === personData.program?.toString()
+            );
+            const matchesRegistrarCurriculum = isRegistrarCurriculumMatch(
+                personData.program
             );
 
             const matchesDepartment =
@@ -682,6 +701,7 @@ const ApplicantScoringReadOnly = () => {
                 matchesApplicantStatus &&
                 matchesRegistrarStatus &&
                 matchesSubmittedDocs &&
+                matchesRegistrarCurriculum &&
                 matchesDepartment &&
                 matchesProgram &&
                 matchesSchoolYear &&
@@ -762,8 +782,9 @@ const ApplicantScoringReadOnly = () => {
                 const response = await axios.get(
                     `${API_BASE_URL}/api/applied_program/${adminData.dprtmnt_id}`
                 );
-                setAllCurriculums(response.data);
-                setCurriculumOptions(response.data);
+                const restrictedCurriculums = restrictToRegistrarCurriculum(response.data);
+                setAllCurriculums(restrictedCurriculums);
+                setCurriculumOptions(restrictedCurriculums);
             } catch (error) {
                 console.error("Error fetching curriculum options:", error);
             }
@@ -800,7 +821,7 @@ const ApplicantScoringReadOnly = () => {
 
     const handleCampusChange = (branchId) => {
         setPerson(prev => ({ ...prev, campus: branchId }));
-        setSelectedProgramFilter("");
+        if (!isProgramLocked) setSelectedProgramFilter("");
         setCurrentPage(1);
 
         // Re-apply department filter with first available department
@@ -822,7 +843,7 @@ const ApplicantScoringReadOnly = () => {
                 allCurriculums.filter((opt) => opt.dprtmnt_name === selectedDept)
             );
         }
-        setSelectedProgramFilter("");
+        if (!isProgramLocked) setSelectedProgramFilter("");
         setCurrentPage(1);
     };
 
@@ -1547,9 +1568,10 @@ const ApplicantScoringReadOnly = () => {
                                 <Select
                                     value={selectedProgramFilterValue}
                                     onChange={(e) => handleProgramFilterChange(e.target.value)}
+                                    disabled={isProgramLocked}
                                     displayEmpty
                                 >
-                                    <MenuItem value="">All Programs</MenuItem>
+                                    {!isProgramLocked && <MenuItem value="">All Programs</MenuItem>}
                                     {curriculumOptions.map((prog) => (
                                         <MenuItem key={prog.curriculum_id} value={prog.program_code}>
                                             {prog.program_code} - {prog.program_description}

@@ -37,6 +37,11 @@ import PersonSearchIcon from "@mui/icons-material/PersonSearch";
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import PersonIcon from "@mui/icons-material/Person";
+import {
+  hasRegistrarCurriculumRestriction,
+  isRegistrarCurriculumMatch,
+  restrictToRegistrarCurriculum,
+} from "../utils/registrarCurriculumRestriction";
 
 const GLOBAL_PAGE_IDS = [13,15,17,38,39,40,41,42,50,56,59,62,73,80,92,96,101,104,105,106,117];
 const GLOBAL_ACCESS_THRESHOLD = 10; // strictly more than 10
@@ -89,6 +94,7 @@ const ClassRoster = () => {
   const [selectedSchoolSemester,   setSelectedSchoolSemester]   = useState("");
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState("");
   const [selectedProgramFilter,    setSelectedProgramFilter]    = useState("");
+  const isProgramLocked = hasRegistrarCurriculumRestriction();
   const [selectedStatusFilter,     setSelectedStatusFilter]     = useState("Regular");
   const [selectedRemarkFilter,     setSelectedRemarkFilter]     = useState("Ongoing");
   const [selectedCampus,           setSelectedCampus]           = useState("");
@@ -282,8 +288,9 @@ const ClassRoster = () => {
 
     axios.get(`${API_BASE_URL}/api/applied_program`)
       .then(res => {
-        setAllCurriculums(res.data);
-        setCurriculumOptions(res.data);
+        const restrictedCurriculums = restrictToRegistrarCurriculum(res.data);
+        setAllCurriculums(restrictedCurriculums);
+        setCurriculumOptions(restrictedCurriculums);
       })
       .catch(console.error);
   }, []);
@@ -291,6 +298,16 @@ const ClassRoster = () => {
   // ─────────────────────────────────────────────────────────────────────────────
   // STEP 6 — Apply UI restrictions based on scope
   // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isProgramLocked) return;
+    const assignedCurriculum = curriculumOptions.find((prog) =>
+      isRegistrarCurriculumMatch(prog.curriculum_id)
+    );
+    if (assignedCurriculum?.program_id) {
+      setSelectedProgramFilter(assignedCurriculum.program_id);
+    }
+  }, [curriculumOptions, isProgramLocked]);
+
   useEffect(() => {
     if (scope === null || !adminData?.dprtmnt_id) return;
 
@@ -352,7 +369,7 @@ const ClassRoster = () => {
     setCurriculumOptions(
       selectedDept ? allCurriculums.filter(o => o.dprtmnt_id === selectedDept) : allCurriculums
     );
-    setSelectedProgramFilter("");
+    if (!isProgramLocked) setSelectedProgramFilter("");
     setCurrentPage(1);
   };
 
@@ -364,6 +381,7 @@ const ClassRoster = () => {
       const matchCampus   = selectedCampus           === "" || String(s.campus)      === String(selectedCampus);
       const matchDept     = selectedDepartmentFilter === "" || s.dprtmnt_id          === selectedDepartmentFilter;
       const matchProgram  = selectedProgramFilter    === "" || s.program_id          === selectedProgramFilter;
+      const matchRegistrarCurriculum = isRegistrarCurriculumMatch(s.curriculum_id);
       const matchYear     = selectedSchoolYear       === "" || String(s.year_id)     === String(selectedSchoolYear);
       const matchSemester = selectedSchoolSemester   === "" || String(s.semester_id) === String(selectedSchoolSemester);
       const matchStatus   = selectedStatusFilter     === ""
@@ -371,7 +389,7 @@ const ClassRoster = () => {
         || (selectedStatusFilter === "Irregular" && getStudentRegularStatus(s) !== 1);
       const matchRemark   = selectedRemarkFilter === "" || remarksMap[s.en_remarks] === selectedRemarkFilter;
 
-      return matchCampus && matchDept && matchProgram && matchYear && matchSemester && matchStatus && matchRemark;
+      return matchCampus && matchDept && matchProgram && matchRegistrarCurriculum && matchYear && matchSemester && matchStatus && matchRemark;
     })
     .sort((a, b) => {
       const nameA = `${a.last_name} ${a.first_name}`.toLowerCase();
@@ -743,8 +761,8 @@ const ClassRoster = () => {
               <Box display="flex" alignItems="center" gap={1}>
                 <Typography fontSize={13} sx={{ minWidth: "100px" }}>Program:</Typography>
                 <FormControl size="small" sx={{ width: "400px" }}>
-                  <Select value={selectedProgramFilter} onChange={e => { setSelectedProgramFilter(e.target.value); setCurrentPage(1); }} displayEmpty>
-                    <MenuItem value="">All Programs</MenuItem>
+                  <Select value={selectedProgramFilter} onChange={e => { setSelectedProgramFilter(e.target.value); setCurrentPage(1); }} disabled={isProgramLocked} displayEmpty>
+                    {!isProgramLocked && <MenuItem value="">All Programs</MenuItem>}
                     {curriculumOptions.map(p => (
                       <MenuItem key={p.curriculum_id} value={p.program_id}>
                         {p.program_code} - {p.program_description}

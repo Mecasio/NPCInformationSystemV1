@@ -21,6 +21,7 @@ import {
   MenuItem,
 } from "@mui/material";
 import API_BASE_URL from "../apiConfig";
+import { restrictToRegistrarCurriculum } from "../utils/registrarCurriculumRestriction";
 import Search from "@mui/icons-material/Search";
 import { Link, useLocation } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -237,7 +238,7 @@ const OfficialRequirements = () => {
     const fetchCurriculums = async () => {
       try {
         const response = await axios.get(`${API_BASE_URL}/api/applied_program`);
-        setCurriculumOptions(response.data);
+        setCurriculumOptions(restrictToRegistrarCurriculum(response.data));
       } catch (error) {
         console.error("Error fetching curriculum options:", error);
       }
