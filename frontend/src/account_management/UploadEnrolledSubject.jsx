@@ -1,11 +1,10 @@
-import React, { useEffect, useRef, useState, useContext, useMemo } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useContext, useMemo } from 'react';
 import { SettingsContext } from "../App";
 import axios from 'axios';
 import {
   Box,
   Typography,
   Button,
-  TextField,
   Table,
   TableBody,
   TableCell,
@@ -26,9 +25,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  List,
-  ListItem,
-  ListItemText,
 } from '@mui/material';
 import API_BASE_URL from '../apiConfig';
 import LoadingOverlay from '../components/LoadingOverlay';
@@ -51,6 +47,12 @@ const FILTER_MENU_PROPS = {
     },
 };
 
+const IMPORT_DETAIL_ROW_HEIGHT = 46;
+const IMPORT_DETAIL_OVERSCAN = 8;
+const IMPORT_DETAIL_VIEWPORT_HEIGHT = 460;
+const IMPORT_DETAIL_GRID_COLUMNS = "145px 130px 120px 120px 145px minmax(280px, 1fr)";
+const IMPORT_DETAIL_MIN_WIDTH = 940;
+
 const UploadEnrolledSubject = () => {
     const settings = useContext(SettingsContext);
   
@@ -65,17 +67,20 @@ const UploadEnrolledSubject = () => {
     const [companyName, setCompanyName] = useState("");
     const [shortTerm, setShortTerm] = useState("");
     const [campusAddress, setCampusAddress] = useState("");
+    const [branches, setBranches] = useState([]);
   
     const [userID, setUserID] = useState("");
     const [user, setUser] = useState("");
     const [userRole, setUserRole] = useState("");
     const [employeeID, setEmployeeID] = useState("");
     const [hasAccess, setHasAccess] = useState(null);
+    const [canCreate, setCanCreate] = useState(false);
   
     const [loading, setLoading] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
-    const [campus, setCampus] = useState('1');
+    const [campus, setCampus] = useState("");
     const [studentUploaded, setStudentUploaded] = useState([]);
+    const [totalStudentCount, setTotalStudentCount] = useState(0);
     const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState("");
     const [selectedProgramFilter, setSelectedProgramFilter] = useState("");
     const [selectedSchoolYearFilter, setSelectedSchoolYearFilter] = useState("");
@@ -102,10 +107,24 @@ const UploadEnrolledSubject = () => {
     });
     const [skippedDialogOpen, setSkippedDialogOpen] = useState(false);
     const [skippedRows, setSkippedRows] = useState([]);
+    const [importDetailsTitle, setImportDetailsTitle] = useState("Skipped Student Data");
+    const [importDetailScrollTop, setImportDetailScrollTop] = useState(0);
 
-    const progressTimerRef = useRef(null);
+    const progressEventSourceRef = useRef(null);
     const fileInputRef = useRef(null);
-    const pageId = 117;
+    const importDetailViewportRef = useRef(null);
+    const pageId = 151;
+
+    const getPermissionHeaders = () => ({
+        "x-employee-id": employeeID || localStorage.getItem("employee_id") || "",
+        "x-page-id": pageId,
+        "x-audit-actor-id":
+            employeeID ||
+            localStorage.getItem("employee_id") ||
+            localStorage.getItem("email") ||
+            "unknown",
+        "x-audit-actor-role": userRole || localStorage.getItem("role") || "registrar",
+    });
 
     const filteredUploadedStudents = useMemo(() => {
         return studentUploaded.filter((row) => {
@@ -186,6 +205,24 @@ const UploadEnrolledSubject = () => {
         if (settings.company_name) setCompanyName(settings.company_name);
         if (settings.short_term) setShortTerm(settings.short_term);
         if (settings.campus_address) setCampusAddress(settings.campus_address);
+        if (settings?.branches) {
+            try {
+                const parsedBranches =
+                    typeof settings.branches === "string"
+                        ? JSON.parse(settings.branches)
+                        : settings.branches;
+                const branchList = Array.isArray(parsedBranches) ? parsedBranches : [];
+                setBranches(branchList);
+                setCampus((prev) => prev || String(branchList?.[0]?.id ?? ""));
+            } catch (err) {
+                console.error("Failed to parse branch settings:", err);
+                setBranches([]);
+                setCampus("");
+            }
+        } else {
+            setBranches([]);
+            setCampus("");
+        }
     }, [settings]);
 
     useEffect(() => {
@@ -215,24 +252,25 @@ const UploadEnrolledSubject = () => {
     }, []);
 
     useEffect(() => {
+        fetchUploadedStudentCount();
+    }, [
+        selectedDepartmentFilter,
+        selectedProgramFilter,
+        selectedSchoolYearFilter,
+        selectedSemesterFilter,
+        selectedYearLevelFilter,
+    ]);
+
+    useEffect(() => {
         const loadFilters = async () => {
             await fetchDepartments();
             await fetchSchoolYears();
             await fetchSemesters();
             await fetchYearLevels();
-            await fetchActiveSchoolYear();
         };
 
         loadFilters();
     }, []);
-
-    useEffect(() => {
-        if (departmentFilters.length > 0 && !selectedDepartmentFilter) {
-            const firstDeptId = departmentFilters[0].dprtmnt_id;
-            setSelectedDepartmentFilter(firstDeptId);
-            fetchPrograms(firstDeptId);
-        }
-    }, [departmentFilters, selectedDepartmentFilter]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -270,47 +308,36 @@ const UploadEnrolledSubject = () => {
 
     useEffect(() => {
         return () => {
-            if (progressTimerRef.current) {
-                clearInterval(progressTimerRef.current);
+            if (progressEventSourceRef.current) {
+                progressEventSourceRef.current.close();
             }
         };
     }, []);
 
     useEffect(() => {
-        if (progressValue < 25) {
-            setProgressStep('sorting');
-            setProgressMessage('Sorting XLSX data...');
-            return;
+        if (!skippedDialogOpen) return;
+        setImportDetailScrollTop(0);
+        if (importDetailViewportRef.current) {
+            importDetailViewportRef.current.scrollTop = 0;
         }
-        if (progressValue < 50) {
-            setProgressStep('processing');
-            setProgressMessage('Processing grouped student records...');
-            return;
-        }
-        if (progressValue < 75) {
-            setProgressStep('extracting');
-            setProgressMessage('Extracting mapped fields and IDs...');
-            return;
-        }
-        if (progressValue < 100) {
-            setProgressStep('saving');
-            setProgressMessage('Saving records to database...');
-        }
-    }, [progressValue]);
+    }, [skippedDialogOpen, skippedRows.length]);
 
     const checkAccess = async (employeeID) => {
         try {
             const response = await axios.get(
                 `${API_BASE_URL}/api/page_access/${employeeID}/${pageId}`,
             );
-            if (response.data && response.data.page_privilege === 1) {
+            if (response.data && Number(response.data.page_privilege) === 1) {
                 setHasAccess(true);
+                setCanCreate(Number(response.data?.can_create) === 1);
             } else {
                 setHasAccess(false);
+                setCanCreate(false);
             }
         } catch (error) {
             console.error("Error checking access:", error);
             setHasAccess(false);
+            setCanCreate(false);
             if (error.response && error.response.data.message) {
                 console.log(error.response.data.message);
             } else {
@@ -334,6 +361,24 @@ const UploadEnrolledSubject = () => {
             setStudentUploaded(Array.isArray(res.data) ? res.data : []);
         } catch (err) {
             console.error('Failed in fetching uploaded students:', err);
+        }
+    };
+
+    const fetchUploadedStudentCount = async () => {
+        try {
+            const res = await axios.get(`${API_BASE_URL}/get_uploaded_students/count`, {
+                params: {
+                    departmentId: selectedDepartmentFilter || undefined,
+                    curriculumId: selectedProgramFilter || undefined,
+                    yearId: selectedSchoolYearFilter || undefined,
+                    semesterId: selectedSemesterFilter || undefined,
+                    yearLevelId: selectedYearLevelFilter || undefined,
+                },
+            });
+            setTotalStudentCount(Number(res.data?.totalStudents || 0));
+        } catch (err) {
+            console.error('Failed in fetching uploaded student count:', err);
+            setTotalStudentCount(0);
         }
     };
 
@@ -396,28 +441,58 @@ const UploadEnrolledSubject = () => {
         }
     };
 
-    const startProgressTracking = () => {
-        if (progressTimerRef.current) {
-        clearInterval(progressTimerRef.current);
+    const startProgressTracking = (importId) => {
+        if (progressEventSourceRef.current) {
+            progressEventSourceRef.current.close();
         }
 
         setProgressOpen(true);
-        setProgressValue(8);
+        setProgressValue(1);
         setProgressStep('sorting');
-        setProgressMessage('Sorting XLSX data...');
+        setProgressMessage('Preparing XLSX import...');
 
-        progressTimerRef.current = setInterval(() => {
-        setProgressValue((prev) => {
-            const bump = Math.random() * 7 + 2;
-            return Math.min(prev + bump, 95);
-        });
-        }, 450);
+        const eventSource = new EventSource(
+            `${API_BASE_URL}/import-xlsx-into-enrolled-subject/progress/${encodeURIComponent(importId)}`,
+        );
+        progressEventSourceRef.current = eventSource;
+
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data || "{}");
+                const nextProgress = Number(data.progress);
+
+                if (!Number.isNaN(nextProgress)) {
+                    setProgressValue(Math.max(0, Math.min(100, nextProgress)));
+                }
+                if (data.step) {
+                    setProgressStep(data.step);
+                }
+                if (data.message) {
+                    setProgressMessage(data.message);
+                }
+                if (data.done || data.error) {
+                    eventSource.close();
+                    if (progressEventSourceRef.current === eventSource) {
+                        progressEventSourceRef.current = null;
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to parse import progress event:", error);
+            }
+        };
+
+        eventSource.onerror = () => {
+            eventSource.close();
+            if (progressEventSourceRef.current === eventSource) {
+                progressEventSourceRef.current = null;
+            }
+        };
     };
 
     const finishProgressTracking = async (isSuccess) => {
-        if (progressTimerRef.current) {
-        clearInterval(progressTimerRef.current);
-        progressTimerRef.current = null;
+        if (progressEventSourceRef.current) {
+            progressEventSourceRef.current.close();
+            progressEventSourceRef.current = null;
         }
 
         setProgressValue(100);
@@ -437,7 +512,209 @@ const UploadEnrolledSubject = () => {
         return 'pending';
     };
 
+    const normalizeImportDetailRow = useCallback((item = {}) => ({
+        studentNumber:
+            item.studentNumber ||
+            item.student_number ||
+            item.student ||
+            item.row ||
+            "N/A",
+        curriculumId:
+            item.curriculumId ||
+            item.curriculum_id ||
+            item.active_curriculum ||
+            item.programCode ||
+            item.program_code ||
+            "-",
+        courseId:
+            item.courseId ||
+            item.course_id ||
+            item.courseCode ||
+            item.course_code ||
+            "-",
+        yearLevelId:
+            item.yearLevelId ||
+            item.year_level_id ||
+            item.yearLevel ||
+            item.year_level ||
+            "-",
+        schoolYear:
+            item.schoolYear ||
+            item.school_year ||
+            item.activeSchoolYearId ||
+            item.active_school_year_id ||
+            item.curriculumYear ||
+            item.curriculum_year ||
+            "-",
+        reason: item.reason || item.message || "No reason provided",
+    }), []);
+
+    const openImportDetails = (title, rows) => {
+        setImportDetailsTitle(title);
+        setSkippedRows((Array.isArray(rows) ? rows : []).map(normalizeImportDetailRow));
+        setSkippedDialogOpen(true);
+    };
+
+    const normalizedSkippedRows = useMemo(
+        () => skippedRows.map(normalizeImportDetailRow),
+        [skippedRows, normalizeImportDetailRow],
+    );
+
+    const totalImportDetailHeight = normalizedSkippedRows.length * IMPORT_DETAIL_ROW_HEIGHT;
+    const importDetailStartIndex = Math.max(
+        0,
+        Math.floor(importDetailScrollTop / IMPORT_DETAIL_ROW_HEIGHT) - IMPORT_DETAIL_OVERSCAN,
+    );
+    const importDetailVisibleCount =
+        Math.ceil(IMPORT_DETAIL_VIEWPORT_HEIGHT / IMPORT_DETAIL_ROW_HEIGHT) +
+        IMPORT_DETAIL_OVERSCAN * 2;
+    const importDetailEndIndex = Math.min(
+        normalizedSkippedRows.length,
+        importDetailStartIndex + importDetailVisibleCount,
+    );
+    const visibleImportDetailRows = normalizedSkippedRows.slice(
+        importDetailStartIndex,
+        importDetailEndIndex,
+    );
+
+    const buildImportFailureDetails = (data = {}) => {
+        data = data || {};
+        const details = [];
+        const addDetail = (studentNumber, reason, extra = {}) => {
+            const safeReason = String(reason || "").trim();
+            if (!safeReason) return;
+            details.push({
+                studentNumber: studentNumber || "Import failed",
+                reason: safeReason,
+                ...extra,
+            });
+        };
+
+        addDetail(null, data.error || data.message || data.detail);
+        if (data.detail && data.detail !== data.error && data.detail !== data.message) {
+            addDetail("Reason", data.detail);
+        }
+
+        const missingCourses = Array.isArray(data.missing_courses)
+            ? data.missing_courses
+            : [];
+        missingCourses.forEach((course) => {
+            addDetail(
+                course.course_code || "Missing course",
+                `Course not found${course.course_description ? `: ${course.course_description}` : ""}`,
+                {
+                    courseCode: course.course_code,
+                    courseId: course.course_id,
+                },
+            );
+        });
+
+        const missingCourseCodes = Array.isArray(data.missing_course_codes)
+            ? data.missing_course_codes
+            : [];
+        missingCourseCodes.forEach((courseCode) => {
+            addDetail(courseCode || "Missing course", "Course code does not exist.");
+        });
+
+        const missingCurriculums = Array.isArray(data.missingCurriculums)
+            ? data.missingCurriculums
+            : Array.isArray(data.missing_curriculums)
+              ? data.missing_curriculums
+              : [];
+        missingCurriculums.forEach((curriculum) => {
+            addDetail(
+                curriculum.studentNumber || curriculum.student_number || "Missing curriculum",
+                `Curriculum not found: ${curriculum.programCode || curriculum.program_code || "Unknown program"}${curriculum.major ? ` (${curriculum.major})` : ""}${curriculum.curriculumYear || curriculum.curriculum_year ? ` - ${curriculum.curriculumYear || curriculum.curriculum_year}` : ""}`,
+                curriculum,
+            );
+        });
+
+        const invalidNstpComponents = Array.isArray(data.invalid_nstp_components)
+            ? data.invalid_nstp_components
+            : [];
+        invalidNstpComponents.forEach((item) => {
+            addDetail(
+                item.detected_course_code || "Invalid NSTP component",
+                `Unsupported NSTP component${item.semester ? ` for ${item.semester}` : ""}.`,
+            );
+        });
+
+        const skippedItems = Array.isArray(data.skippedItems) ? data.skippedItems : [];
+        skippedItems.forEach((item) => {
+            addDetail(
+                item.studentNumber || item.student_number || "Skipped row",
+                item.reason || item.message || "No reason provided",
+                item,
+            );
+        });
+
+        return details;
+    };
+
+    const buildMissingCurriculumDetails = (data = {}) => {
+        const missingCurriculums = Array.isArray(data?.missingCurriculums)
+            ? data.missingCurriculums
+            : Array.isArray(data?.missing_curriculums)
+              ? data.missing_curriculums
+              : [];
+
+        return missingCurriculums.map((curriculum) => ({
+            studentNumber:
+                curriculum.studentNumber ||
+                curriculum.student_number ||
+                curriculum.programCode ||
+                curriculum.program_code ||
+                "Missing curriculum",
+            curriculumId: curriculum.curriculumId || curriculum.curriculum_id || "-",
+            courseId: curriculum.courseId || curriculum.course_id || "-",
+            yearLevelId: curriculum.yearLevelId || curriculum.year_level_id || "-",
+            schoolYear:
+                curriculum.schoolYear ||
+                curriculum.school_year ||
+                curriculum.curriculumYear ||
+                curriculum.curriculum_year ||
+                "-",
+            reason: `Curriculum not found: ${curriculum.programCode || curriculum.program_code || "Unknown program"}${curriculum.major ? ` (${curriculum.major})` : ""}${curriculum.curriculumYear || curriculum.curriculum_year ? ` - ${curriculum.curriculumYear || curriculum.curriculum_year}` : ""}`,
+        }));
+    };
+
+    const displayMissingCurriculum = (data = {}) => {
+        const details = buildMissingCurriculumDetails(data);
+        if (details.length === 0) return false;
+
+        openImportDetails("Missing Curriculum", details);
+        return true;
+    };
+
+    const showImportFailure = (data = {}, fallbackMessage = "Import failed.") => {
+        data = data || {};
+        const details = buildImportFailureDetails(data);
+        const message =
+            data.error && data.detail && data.detail !== data.error
+                ? `${data.error}: ${data.detail}`
+                : data.error || data.message || data.detail || fallbackMessage;
+
+        setSnackbar({
+            open: true,
+            message,
+            severity: 'error',
+        });
+
+        if (!displayMissingCurriculum(data) && details.length > 0) {
+            openImportDetails("Import Failed Details", details);
+        }
+    };
+
     const handleImportXlsx = async () => {
+        if (!canCreate) {
+        setSnackbar({
+            open: true,
+            message: 'You do not have permission to import enrolled subjects.',
+            severity: 'error',
+        });
+        return;
+        }
+
         if (!selectedFile) {
         setSnackbar({
             open: true,
@@ -447,19 +724,33 @@ const UploadEnrolledSubject = () => {
         return;
         }
 
+        if (!campus) {
+            setSnackbar({
+                open: true,
+                message: 'Please select a campus first.',
+                severity: 'warning',
+            });
+            return;
+        }
+
         try {
         setImporting(true);
-        startProgressTracking();
+        const importId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        startProgressTracking(importId);
 
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('campus', campus);
+        formData.append('import_id', importId);
 
         const res = await axios.post(
             `${API_BASE_URL}/import-xlsx-into-enrolled-subject`,
             formData,
             {
-            headers: { 'Content-Type': 'multipart/form-data' },
+            headers: {
+                'Content-Type': 'multipart/form-data',
+                ...getPermissionHeaders(),
+            },
             },
         );
 
@@ -468,15 +759,20 @@ const UploadEnrolledSubject = () => {
             const skippedCount = Number(res.data?.skippedCount || 0);
             const skippedItems = Array.isArray(res.data?.skippedItems) ? res.data.skippedItems : [];
             const importedCount = Number(res.data?.insertedCount || res.data?.importedCount || 0);
+            const missingCurriculumCount = Array.isArray(res.data?.missingCurriculums)
+                ? res.data.missingCurriculums.length
+                : 0;
 
             if (skippedCount > 0) {
                 setSnackbar({
                     open: true,
-                    message: `Import finished with ${skippedCount} skipped row(s).`,
+                    message:
+                        missingCurriculumCount > 0
+                            ? `Import finished with ${skippedCount} row(s) not inserted, including ${missingCurriculumCount} missing curriculum record(s).`
+                            : `Import finished with ${skippedCount} row(s) not inserted.`,
                     severity: 'warning',
                 });
-                setSkippedRows(skippedItems);
-                setSkippedDialogOpen(true);
+                openImportDetails("Data Not Inserted", skippedItems);
             } else {
                 setSnackbar({
                     open: true,
@@ -486,6 +782,10 @@ const UploadEnrolledSubject = () => {
             }
 
             await insertAuditLog("enrolled_subjects_imported", {
+                page_id: pageId,
+                module: "Upload Enrolled Subject",
+                file_name: selectedFile?.name || "N/A",
+                campus,
                 imported_count: importedCount,
                 skipped_count: skippedCount,
             });
@@ -494,20 +794,12 @@ const UploadEnrolledSubject = () => {
             await fetchUploadedStudent();
         } else {
             await finishProgressTracking(false);
-            setSnackbar({
-            open: true,
-            message: res.data?.error || 'Import failed.',
-            severity: 'error',
-            });
+            showImportFailure(res.data, 'Import failed.');
         }
         } catch (err) {
             console.error('Import failed:', err);
             await finishProgressTracking(false);
-            setSnackbar({
-                open: true,
-                message: err.response?.data?.error || 'Import failed.',
-                severity: 'error',
-            });
+            showImportFailure(err.response?.data, err.message || 'Import failed.');
         } finally {
             setImporting(false);
             if (fileInputRef.current) {
@@ -675,18 +967,26 @@ const UploadEnrolledSubject = () => {
         <Paper sx={{ p: 3, mb: 3, border: `1px solid ${borderColor}` }}>
             <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
                 <Box>
-                    <TextField
-                        select
-                        label="Campus"
-                        size="small"
-                        value={campus}
-                        onChange={(e) => setCampus(e.target.value)}
-                        SelectProps={{ native: true }}
-                        sx={{ width: 160 }}
-                    >
-                        <option value="1">Manila</option>
-                        <option value="2">Cavite</option>
-                    </TextField>
+                    <FormControl size="small" sx={{ minWidth: 180 }}>
+                        <Select
+                            displayEmpty
+                            value={campus}
+                            onChange={(e) => setCampus(e.target.value)}
+                            MenuProps={FILTER_MENU_PROPS}
+                        >
+                            <MenuItem value="" disabled>
+                                Select Campus
+                            </MenuItem>
+                            {branches.map((branch) => (
+                                <MenuItem
+                                    key={branch.id ?? branch.branch}
+                                    value={String(branch.id ?? "")}
+                                >
+                                    {branch.branch}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
                 </Box>
 
                 <input
@@ -707,6 +1007,7 @@ const UploadEnrolledSubject = () => {
 
                     <Button
                         variant="outlined"
+                        disabled={!canCreate || importing}
                         onClick={() => {
                             if (fileInputRef.current) {
                                 fileInputRef.current.value = '';
@@ -720,7 +1021,7 @@ const UploadEnrolledSubject = () => {
                     <Button
                         variant="contained"
                         onClick={handleImportXlsx}
-                        disabled={importing}
+                        disabled={!canCreate || importing}
                         sx={{ backgroundColor: mainButtonColor, width: "150px" }}
                     >
                         {importing ? 'Importing...' : 'Import File'}
@@ -755,7 +1056,7 @@ const UploadEnrolledSubject = () => {
                                 gap={1}
                             >
                                 <Typography fontSize="14px" fontWeight="bold" color="white">
-                                    Total Students: {sortedUploadedStudents.length}
+                                    Total Students: {totalStudentCount}
                                 </Typography>
 
                                 <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
@@ -1059,24 +1360,106 @@ const UploadEnrolledSubject = () => {
         <Dialog
             open={skippedDialogOpen}
             onClose={() => setSkippedDialogOpen(false)}
-            maxWidth="md"
+            maxWidth="lg"
             fullWidth
         >
-            <DialogTitle>Skipped Student Data</DialogTitle>
-            <DialogContent dividers>
-                {skippedRows.length === 0 ? (
-                    <Typography variant="body2">No skipped rows details provided.</Typography>
+            <DialogTitle>
+                {importDetailsTitle}
+                {normalizedSkippedRows.length > 0 ? ` (${normalizedSkippedRows.length})` : ""}
+            </DialogTitle>
+            <DialogContent dividers sx={{ p: 0 }}>
+                {normalizedSkippedRows.length === 0 ? (
+                    <Typography variant="body2" sx={{ p: 2 }}>
+                        No import details provided.
+                    </Typography>
                 ) : (
-                    <List dense>
-                        {skippedRows.map((item, index) => (
-                            <ListItem key={`${item.studentNumber || "NA"}-${index}`} sx={{ px: 0 }}>
-                                <ListItemText
-                                    primary={`${index + 1}. ${item.studentNumber || "Unknown Student"}`}
-                                    secondary={item.reason || "No reason provided"}
-                                />
-                            </ListItem>
-                        ))}
-                    </List>
+                    <Box sx={{ overflowX: "auto" }}>
+                        <Box
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: IMPORT_DETAIL_GRID_COLUMNS,
+                                gap: 0,
+                                minWidth: IMPORT_DETAIL_MIN_WIDTH,
+                                bgcolor: "#f5f5f5",
+                                borderBottom: "1px solid #d0d0d0",
+                                fontWeight: 700,
+                                fontSize: "12px",
+                            }}
+                        >
+                            {["Student Number", "Curriculum ID", "Course ID", "Year Level ID", "School Year", "Reason Not Inserted"].map((label) => (
+                                <Box
+                                    key={label}
+                                    sx={{
+                                        px: 1.5,
+                                        py: 1,
+                                        borderRight: "1px solid #d0d0d0",
+                                        whiteSpace: "nowrap",
+                                    }}
+                                >
+                                    {label}
+                                </Box>
+                            ))}
+                        </Box>
+                        <Box
+                            ref={importDetailViewportRef}
+                            onScroll={(event) => setImportDetailScrollTop(event.currentTarget.scrollTop)}
+                            sx={{
+                                height: IMPORT_DETAIL_VIEWPORT_HEIGHT,
+                                overflowY: "auto",
+                                overflowX: "hidden",
+                                position: "relative",
+                            }}
+                        >
+                            <Box sx={{ height: totalImportDetailHeight, minWidth: IMPORT_DETAIL_MIN_WIDTH, position: "relative" }}>
+                                {visibleImportDetailRows.map((item, visibleIndex) => {
+                                    const rowIndex = importDetailStartIndex + visibleIndex;
+                                    return (
+                                        <Box
+                                            key={`${item.studentNumber}-${item.curriculumId}-${item.courseId}-${rowIndex}`}
+                                            sx={{
+                                                position: "absolute",
+                                                top: rowIndex * IMPORT_DETAIL_ROW_HEIGHT,
+                                                left: 0,
+                                                right: 0,
+                                                height: IMPORT_DETAIL_ROW_HEIGHT,
+                                                display: "grid",
+                                                gridTemplateColumns: IMPORT_DETAIL_GRID_COLUMNS,
+                                                alignItems: "stretch",
+                                                borderBottom: "1px solid #eeeeee",
+                                                bgcolor: rowIndex % 2 === 0 ? "#fff" : "#fafafa",
+                                                fontSize: "12px",
+                                            }}
+                                        >
+                                            {[
+                                                item.studentNumber,
+                                                item.curriculumId,
+                                                item.courseId,
+                                                item.yearLevelId,
+                                                item.schoolYear,
+                                                item.reason,
+                                            ].map((value, cellIndex) => (
+                                                <Box
+                                                    key={cellIndex}
+                                                    title={String(value || "-")}
+                                                    sx={{
+                                                        px: 1.5,
+                                                        py: 0.75,
+                                                        borderRight: "1px solid #eeeeee",
+                                                        overflow: "hidden",
+                                                        textOverflow: "ellipsis",
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                    }}
+                                                >
+                                                    {value || "-"}
+                                                </Box>
+                                            ))}
+                                        </Box>
+                                    );
+                                })}
+                            </Box>
+                        </Box>
+                    </Box>
                 )}
             </DialogContent>
             <DialogActions>

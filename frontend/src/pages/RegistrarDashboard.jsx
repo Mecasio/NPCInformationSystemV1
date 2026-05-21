@@ -478,10 +478,6 @@ const Dashboard = ({ profileImage, setProfileImage }) => {
     },
   ];
 
-  const backgroundImage = settings?.bg_image
-    ? `url(${API_BASE_URL}${settings.bg_image})`
-    : "linear-gradient(to right, #e0e0e0, #bdbdbd)";
-
   const headerColor = settings?.header_color || "#1976d2";
 
   const cardSx = {
@@ -512,24 +508,9 @@ const Dashboard = ({ profileImage, setProfileImage }) => {
       sx={{
         height: "calc(100vh - 100px)",
         width: "100%",
-        backgroundImage,
-        backgroundRepeat: "no-repeat",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
         position: "relative",
       }}
     >
-      {/* Overlay */}
-      <Box
-        sx={{
-          position: "absolute",
-          inset: 0,
-          backgroundColor: "rgba(0,0,0,0.1)",
-          backdropFilter: "blur(0.5px)",
-          zIndex: 0,
-          pointerEvents: "none",
-        }}
-      />
 
       {/* Scrollable content */}
       <Box
