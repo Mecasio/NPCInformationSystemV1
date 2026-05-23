@@ -379,44 +379,61 @@ router.put("/update_registrar/:id", upload.single("profile_picture"), async (req
     const curriculumValue = data.curriculum_id !== undefined
       ? (data.curriculum_id === "" ? null : Number(data.curriculum_id))
       : (current.program_id ?? null);
+    const passwordValue =
+      typeof data.password === "string" ? data.password.trim() : "";
+    const hashedPassword = passwordValue
+      ? await bcrypt.hash(passwordValue, 10)
+      : null;
+    const nextEmployeeId = data.employee_id || current.employee_id;
+    const nextAccessLevel = data.access_level
+      ? Number(data.access_level)
+      : current.access_level;
+    const accessLevelChanged =
+      data.access_level &&
+      Number(data.access_level) !== Number(current.access_level);
+    const employeeIdChanged =
+      String(nextEmployeeId) !== String(current.employee_id);
 
     await db3.query(
       `UPDATE user_accounts 
-       SET employee_id=?, last_name=?, middle_name=?, first_name=?, role=?, email=?, status=?, dprtmnt_id=?, profile_picture=?, access_level=?, program_id=?
+       SET employee_id=?, last_name=?, middle_name=?, first_name=?, role=?, email=?, password=COALESCE(?, password), status=?, dprtmnt_id=?, profile_picture=?, access_level=?, program_id=?
        WHERE id=?`,
       [
-        data.employee_id || current.employee_id,
+        nextEmployeeId,
         data.last_name || current.last_name,
         data.middle_name || current.middle_name,
         data.first_name || current.first_name,
         "registrar",
         data.email?.toLowerCase() || current.email,
+        hashedPassword,
         data.status ?? current.status,
         deptValue,
         finalFilename,
-        data.access_level ? Number(data.access_level) : current.access_level,
+        nextAccessLevel,
         curriculumValue,
         id
       ]
     );
 
-    if (data.access_level) {
-      const newEmployeeId = data.employee_id || current.employee_id;
+    if (accessLevelChanged) {
       const [accessRows] = await db3.query(
         "SELECT access_page FROM access_table WHERE access_id = ?",
-        [data.access_level]
+        [nextAccessLevel]
       );
 
       if (accessRows.length) {
         const pagePermissions = parseAccessPermissions(accessRows[0].access_page);
 
-        await db3.query("DELETE FROM page_access WHERE user_id = ?", [newEmployeeId]);
+        await db3.query("DELETE FROM page_access WHERE user_id IN (?, ?)", [
+          current.employee_id,
+          nextEmployeeId,
+        ]);
 
         if (pagePermissions.length) {
           const values = pagePermissions.map((permission) => [
             permission.page_privilege,
             permission.page_id,
-            newEmployeeId,
+            nextEmployeeId,
             permission.can_create,
             permission.can_edit,
             permission.can_delete,
@@ -427,22 +444,44 @@ router.put("/update_registrar/:id", upload.single("profile_picture"), async (req
           );
         }
       }
+    } else if (employeeIdChanged) {
+      await db3.query("UPDATE page_access SET user_id = ? WHERE user_id = ?", [
+        nextEmployeeId,
+        current.employee_id,
+      ]);
     }
 
     const { actorId, actorRole } = getAuditActor(req);
     const roleLabel = formatAuditActorRole(actorRole);
+    const registrarLabel = getRegistrarLabel({
+      employee_id: data.employee_id || current.employee_id,
+      last_name: data.last_name || current.last_name,
+      first_name: data.first_name || current.first_name,
+      middle_name: data.middle_name || current.middle_name,
+      email: data.email || current.email,
+      id,
+    });
     await insertRegistrarAuditLog({
       req,
       action: "REGISTRAR_ACCOUNT_UPDATE",
-      message: `${roleLabel} (${actorId}) updated registrar account ${getRegistrarLabel({
-        employee_id: data.employee_id || current.employee_id,
-        last_name: data.last_name || current.last_name,
-        first_name: data.first_name || current.first_name,
-        middle_name: data.middle_name || current.middle_name,
-        email: data.email || current.email,
-        id,
-      })}.`,
+      message: `${roleLabel} (${actorId}) updated registrar account ${registrarLabel}.`,
     });
+    if (passwordValue) {
+      await insertRegistrarAuditLog({
+        req,
+        action: "REGISTRAR_PASSWORD_CHANGE",
+        severity: "WARN",
+        message: `${roleLabel} (${actorId}) changed the password for registrar account ${registrarLabel}.`,
+      });
+    }
+    if (accessLevelChanged) {
+      await insertRegistrarAuditLog({
+        req,
+        action: "REGISTRAR_ACCESS_LEVEL_CHANGE",
+        severity: "WARN",
+        message: `${roleLabel} (${actorId}) changed access level for registrar account ${registrarLabel} from ${current.access_level || "none"} to ${nextAccessLevel || "none"}.`,
+      });
+    }
 
     res.json({ success: true, message: "Registrar updated successfully" });
 
@@ -498,45 +537,60 @@ router.put("/update_registrar/:id", upload.single("profile_picture"), async (req
     }
 
     const deptValue = data.dprtmnt_id === "" ? null : data.dprtmnt_id;
+    const passwordValue =
+      typeof data.password === "string" ? data.password.trim() : "";
+    const hashedPassword = passwordValue
+      ? await bcrypt.hash(passwordValue, 10)
+      : null;
+    const nextEmployeeId = data.employee_id || current.employee_id;
+    const nextAccessLevel = data.access_level
+      ? Number(data.access_level)
+      : current.access_level;
+    const accessLevelChanged =
+      data.access_level &&
+      Number(data.access_level) !== Number(current.access_level);
+    const employeeIdChanged =
+      String(nextEmployeeId) !== String(current.employee_id);
 
     await db3.query(
       `UPDATE user_accounts 
-       SET employee_id=?, last_name=?, middle_name=?, first_name=?, role=?, email=?, status=?, dprtmnt_id=?, profile_picture=?, access_level=?
+       SET employee_id=?, last_name=?, middle_name=?, first_name=?, role=?, email=?, password=COALESCE(?, password), status=?, dprtmnt_id=?, profile_picture=?, access_level=?
        WHERE id=?`,
       [
-        data.employee_id || current.employee_id,
+        nextEmployeeId,
         data.last_name || current.last_name,
         data.middle_name || current.middle_name,
         data.first_name || current.first_name,
         "registrar",
         data.email?.toLowerCase() || current.email,
+        hashedPassword,
         data.status ?? current.status,
         deptValue,
         finalFilename,
-        data.access_level ? Number(data.access_level) : current.access_level,
+        nextAccessLevel,
         id
       ]
     );
 
-    if (data.access_level) {
-      const newEmployeeId = data.employee_id || current.employee_id;
+    if (accessLevelChanged) {
       const [accessRows] = await db3.query(
         "SELECT access_page FROM access_table WHERE access_id = ?",
-        [data.access_level]
+        [nextAccessLevel]
       );
 
       if (accessRows.length) {
         const pagePermissions = parseAccessPermissions(accessRows[0].access_page);
 
-        await db3.query("DELETE FROM page_access WHERE user_id = ?", [
-          newEmployeeId,
+        await db3.query("DELETE FROM page_access WHERE user_id IN (?, ?)", [
+          current.employee_id,
+          nextEmployeeId,
         ]);
 
         if (pagePermissions.length) {
           const values = pagePermissions.map((permission) => [
             permission.page_privilege,
             permission.page_id,
-            newEmployeeId,
+            nextEmployeeId,
             permission.can_create,
             permission.can_edit,
             permission.can_delete,
@@ -547,22 +601,44 @@ router.put("/update_registrar/:id", upload.single("profile_picture"), async (req
           );
         }
       }
+    } else if (employeeIdChanged) {
+      await db3.query("UPDATE page_access SET user_id = ? WHERE user_id = ?", [
+        nextEmployeeId,
+        current.employee_id,
+      ]);
     }
 
     const { actorId, actorRole } = getAuditActor(req);
     const roleLabel = formatAuditActorRole(actorRole);
+    const registrarLabel = getRegistrarLabel({
+      employee_id: data.employee_id || current.employee_id,
+      last_name: data.last_name || current.last_name,
+      first_name: data.first_name || current.first_name,
+      middle_name: data.middle_name || current.middle_name,
+      email: data.email || current.email,
+      id,
+    });
     await insertRegistrarAuditLog({
       req,
       action: "REGISTRAR_ACCOUNT_UPDATE",
-      message: `${roleLabel} (${actorId}) updated registrar account ${getRegistrarLabel({
-        employee_id: data.employee_id || current.employee_id,
-        last_name: data.last_name || current.last_name,
-        first_name: data.first_name || current.first_name,
-        middle_name: data.middle_name || current.middle_name,
-        email: data.email || current.email,
-        id,
-      })}.`,
+      message: `${roleLabel} (${actorId}) updated registrar account ${registrarLabel}.`,
     });
+    if (passwordValue) {
+      await insertRegistrarAuditLog({
+        req,
+        action: "REGISTRAR_PASSWORD_CHANGE",
+        severity: "WARN",
+        message: `${roleLabel} (${actorId}) changed the password for registrar account ${registrarLabel}.`,
+      });
+    }
+    if (accessLevelChanged) {
+      await insertRegistrarAuditLog({
+        req,
+        action: "REGISTRAR_ACCESS_LEVEL_CHANGE",
+        severity: "WARN",
+        message: `${roleLabel} (${actorId}) changed access level for registrar account ${registrarLabel} from ${current.access_level || "none"} to ${nextAccessLevel || "none"}.`,
+      });
+    }
 
     res.json({
       success: true,

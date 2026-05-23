@@ -169,6 +169,21 @@ const CertificateOfRegistration = forwardRef(
 
     const [campusAddress, setCampusAddress] = useState("");
 
+    const getBranchName = (branchId) => {
+      const matchedBranch = branches.find(
+        (branch) =>
+          String(branch?.id) === String(branchId) ||
+          String(branch?.branch_id) === String(branchId),
+      );
+
+      return (
+        matchedBranch?.branch ||
+        matchedBranch?.branch_name ||
+        matchedBranch?.name ||
+        ""
+      );
+    };
+
     useEffect(() => {
       if (!settings) return;
 
@@ -579,7 +594,11 @@ const CertificateOfRegistration = forwardRef(
           const corResponse = await axios.get(
             `${API_BASE_URL}/student-data/${studentNum}`,
           );
-          const fullData = corResponse.data;
+          const fullData = {
+            ...corResponse.data,
+            branch_id: person?.campus || "",
+            campus: person?.campus || "",
+          };
           setData([fullData]); // Wrap in array for data[0] compatibility
 
           // 3. Set additional fields: gender, age, email, program
@@ -764,7 +783,8 @@ const CertificateOfRegistration = forwardRef(
       );
       const totalCombined = totalCourseUnits + totalLabUnits;
       const middleInitial = data[0]?.middle_name?.[0] || "";
-      const campusName = data[0]?.campus === 1 ? "Manila" : "Cavite";
+      const branchId = person?.campus || "";
+      const campusName = getBranchName(branchId);
       const gender = data[0]?.gender === 1 ? "Female" : "Male";
       const totalSum = totalLecFees + totalLabFees;
       const schoolIdFee = isFirstYearFirstSem
@@ -800,6 +820,7 @@ const CertificateOfRegistration = forwardRef(
 
       setRequestedData({
         campus_name: campusName,
+        branch_id: branchId,
         student_number: resolvedStudentNumber,
         learner_reference_number: data[0]?.lrnNumber,
         last_name: data[0]?.last_name,
@@ -838,6 +859,8 @@ const CertificateOfRegistration = forwardRef(
       totalLabFees,
       totalLecFees,
       activeSchoolYear,
+      branches,
+      person?.campus,
       isFirstYearFirstSem,
       isHaveNSTP,
       isHaveComputerFees,

@@ -39,6 +39,7 @@ const CertificateOfRegistration = forwardRef(
     const settings = useContext(SettingsContext);
     const [fetchedLogo, setFetchedLogo] = useState(null);
     const [companyName, setCompanyName] = useState("");
+    const [branches, setBranches] = useState([]);
 
     const showSnackbar = (message, severity = "success") => {
       if (typeof onNotify === "function") {
@@ -59,6 +60,18 @@ const CertificateOfRegistration = forwardRef(
         // ? load dynamic name + address
         if (settings.company_name) setCompanyName(settings.company_name);
         if (settings.campus_address) setCampusAddress(settings.campus_address);
+        if (settings?.branches) {
+          try {
+            const parsed =
+              typeof settings.branches === "string"
+                ? JSON.parse(settings.branches)
+                : settings.branches;
+            setBranches(Array.isArray(parsed) ? parsed : []);
+          } catch (err) {
+            console.error("Failed to parse branches:", err);
+            setBranches([]);
+          }
+        }
       }
     }, [settings]);
 
@@ -147,6 +160,21 @@ const CertificateOfRegistration = forwardRef(
     const [userRole, setUserRole] = useState("");
 
     const [campusAddress, setCampusAddress] = useState("");
+
+    const getBranchName = (branchId) => {
+      const matchedBranch = branches.find(
+        (branch) =>
+          String(branch?.id) === String(branchId) ||
+          String(branch?.branch_id) === String(branchId),
+      );
+
+      return (
+        matchedBranch?.branch ||
+        matchedBranch?.branch_name ||
+        matchedBranch?.name ||
+        ""
+      );
+    };
 
     useEffect(() => {
       if (settings && settings.address) {
@@ -536,6 +564,8 @@ const CertificateOfRegistration = forwardRef(
           setYearDescription(yearDesc);
           const fullData = {
             ...(tagged.corData || {}),
+            branch_id: person?.campus || "",
+            campus: person?.campus || "",
             student_number: studentNum,
             first_name,
             middle_name,
@@ -745,7 +775,8 @@ const CertificateOfRegistration = forwardRef(
       );
       const totalCombined = totalCourseUnits + totalLabUnits;
       const middleInitial = data[0]?.middle_name?.[0] || "";
-      const campusName = data[0]?.campus === 1 ? "Manila" : "Cavite";
+      const branchId = person?.campus || "";
+      const campusName = getBranchName(branchId);
       const gender = String(data[0]?.gender) === "1" ? "Female" : "Male";
       const baseTotalSum = totalLecFees + totalLabFees;
       const totalSum = isFirstYear
@@ -770,6 +801,7 @@ const CertificateOfRegistration = forwardRef(
 
       setRequestedData({
         campus_name: campusName,
+        branch_id: branchId,
         student_number: data[0]?.student_number,
         learner_reference_number: data[0]?.lrnNumber,
         last_name: data[0]?.last_name,
@@ -800,7 +832,7 @@ const CertificateOfRegistration = forwardRef(
         remark: "",
         active_school_year_id: activeSchoolYear[0]?.id || null,
       });
-    }, [data, tosf, enrolled, totalLabFees, totalLecFees]);
+    }, [data, tosf, enrolled, totalLabFees, totalLecFees, branches, person?.campus]);
 
     const toNumber = (value) => {
       if (typeof value === "string") {

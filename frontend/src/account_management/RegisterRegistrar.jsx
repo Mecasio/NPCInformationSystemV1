@@ -175,6 +175,7 @@ const RegisterRegistrar = () => {
     const [registrars, setRegistrars] = useState([]);
     const [openDialog, setOpenDialog] = useState(false);
     const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+    const [openPasswordConfirmDialog, setOpenPasswordConfirmDialog] = useState(false);
     const [editData, setEditData] = useState(null);
     const [registrarToDelete, setRegistrarToDelete] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
@@ -198,6 +199,7 @@ const RegisterRegistrar = () => {
 
     const handleCloseDialog = () => {
         setOpenDialog(false);
+        setOpenPasswordConfirmDialog(false);
         setEditData(null);
         setShowPassword(false); // ← reset
     };
@@ -314,7 +316,7 @@ const RegisterRegistrar = () => {
     const handleChange = (e) => {
         setForm({ ...form, [e.target.name]: e.target.value });
     };
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e, passwordChangeConfirmed = false) => {
         e.preventDefault();
         if (editData && !canEdit) {
             setSnackbarMessage("You do not have permission to edit registrars.");
@@ -327,6 +329,11 @@ const RegisterRegistrar = () => {
             setSnackbarMessage("You do not have permission to create registrars.");
             setSnackbarSeverity("error");
             setOpenSnackbar(true);
+            return;
+        }
+
+        if (editData && form.password.trim() && !passwordChangeConfirmed) {
+            setOpenPasswordConfirmDialog(true);
             return;
         }
 
@@ -404,6 +411,7 @@ const RegisterRegistrar = () => {
 
             setOpenSnackbar(true);
             setOpenDialog(false);
+            setOpenPasswordConfirmDialog(false);
             setEditData(null);
             fetchRegistrars();
 
@@ -1326,6 +1334,44 @@ const RegisterRegistrar = () => {
                     >
 
                         <SaveIcon fontSize="small" /> Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog
+                open={openPasswordConfirmDialog}
+                onClose={() => setOpenPasswordConfirmDialog(false)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle sx={{ backgroundColor: "#800000", color: "#fff" }}>
+                    Confirm Password Change
+                </DialogTitle>
+                <DialogContent sx={{ pt: 3 }}>
+                    <Typography sx={{ mt: 1 }}>
+                        Do you want to change the current password for{" "}
+                        <strong>
+                            {editData
+                                ? `${form.first_name || ""} ${form.last_name || ""}`.trim()
+                                : "this registrar"}
+                        </strong>
+                        ?
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setOpenPasswordConfirmDialog(false)}
+                        color="error"
+                        variant="outlined"
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={(event) => handleSubmit(event, true)}
+                        variant="contained"
+                        startIcon={<SaveIcon />}
+                    >
+                        Yes, Change Password
                     </Button>
                 </DialogActions>
             </Dialog>
