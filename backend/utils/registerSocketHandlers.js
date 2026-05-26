@@ -3542,11 +3542,15 @@ WHERE proctor LIKE ?
         cst.course_code,
         cst.course_unit,
         cst.lab_unit,
-        dt.dprtmnt_name
+        dt.dprtmnt_name,
+        yrlt.year_level_description
       FROM enrolled_subject AS es
         INNER JOIN student_numbering_table AS snt ON es.student_number = snt.student_number
         INNER JOIN person_table AS ptbl ON snt.person_id = ptbl.person_id
-        INNER JOIN time_table AS tt ON es.department_section_id = tt.department_section_id
+        INNER JOIN time_table AS tt
+          ON es.department_section_id = tt.department_section_id
+          AND es.course_id = tt.course_id
+          AND es.active_school_year_id = tt.school_year_id
         INNER JOIN prof_table AS pt ON tt.professor_id = pt.prof_id
         INNER JOIN dprtmnt_section_table AS dst ON es.department_section_id = dst.id
         INNER JOIN section_table AS st ON dst.section_id = st.id
@@ -3556,6 +3560,10 @@ WHERE proctor LIKE ?
         INNER JOIN year_table AS ylt ON sy.year_id = ylt.year_id
         INNER JOIN semester_table AS smt ON sy.semester_id = smt.semester_id
         INNER JOIN course_table AS cst ON  es.course_id = cst.course_id
+        LEFT JOIN program_tagging_table AS ptt
+          ON es.curriculum_id = ptt.curriculum_id
+          AND es.course_id = ptt.course_id
+        LEFT JOIN year_level_table AS yrlt ON ptt.year_level_id = yrlt.year_level_id
         INNER JOIN dprtmnt_curriculum_table AS dct ON ct.curriculum_id = dct.curriculum_id
         INNER JOIN dprtmnt_table AS dt ON dct.dprtmnt_id = dt.dprtmnt_id
       WHERE tt.professor_id = ? AND es.course_id = ? AND es.department_section_id = ? AND es.active_school_year_id = ?
@@ -3568,13 +3576,179 @@ WHERE proctor LIKE ?
           activeSchoolYear,
         ]);
         res.json(result);
-        console.log(result);
       } catch (err) {
         console.error("Server Error: ", err);
         res.status(500).send({ message: "Internal Error", err });
       }
     },
   );
+
+  app.get("/api/grading_sheet_bootstrap/:userID", async (req, res) => {
+    const { userID } = req.params;
+    const { course_id, department_section_id, active_school_year_id } = req.query;
+
+    try {
+      const [[periodStatus]] = await db3.query(
+        "SELECT status FROM period_status WHERE description = 'Final Grading Period'",
+      );
+
+      if (!periodStatus || periodStatus.status !== 1) {
+        return res.status(403).json({ message: "Grades not available yet" });
+      }
+
+      const [[activeYear]] = active_school_year_id
+        ? await db3.query(
+            `
+            SELECT id AS school_year_id, year_id, semester_id
+            FROM active_school_year_table
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [active_school_year_id],
+          )
+        : await db3.query(
+            `
+            SELECT id AS school_year_id, year_id, semester_id
+            FROM active_school_year_table
+            WHERE astatus = 1
+            LIMIT 1
+            `,
+          );
+
+      if (!activeYear) {
+        return res.json({
+          activeSchoolYear: null,
+          courses: [],
+          sections: [],
+          students: [],
+        });
+      }
+
+      const [courses] = await db3.query(
+        `
+        SELECT DISTINCT
+          tt.course_id,
+          ct.course_description,
+          ct.course_code,
+          sy.year_id,
+          sy.semester_id
+        FROM time_table AS tt
+          INNER JOIN course_table AS ct ON tt.course_id = ct.course_id
+          INNER JOIN active_school_year_table AS sy ON tt.school_year_id = sy.id
+        WHERE tt.professor_id = ?
+          AND ct.office_duty = 0
+          AND sy.id = ?
+        ORDER BY ct.course_code ASC
+        `,
+        [userID, activeYear.school_year_id],
+      );
+
+      const courseExists = courses.some((course) => String(course.course_id) === String(course_id));
+      const selectedCourseId = courseExists ? course_id : courses[0]?.course_id;
+
+      const [sections] = selectedCourseId
+        ? await db3.query(
+            `
+            SELECT DISTINCT
+              tt.department_section_id,
+              ptbl.program_code,
+              st.description AS section_description
+            FROM time_table AS tt
+              INNER JOIN dprtmnt_section_table AS dst ON tt.department_section_id = dst.id
+              INNER JOIN curriculum_table AS ct ON dst.curriculum_id = ct.curriculum_id
+              INNER JOIN section_table AS st ON dst.section_id = st.id
+              INNER JOIN program_table AS ptbl ON ct.program_id = ptbl.program_id
+            WHERE tt.professor_id = ?
+              AND tt.course_id = ?
+              AND tt.school_year_id = ?
+            GROUP BY tt.department_section_id
+            ORDER BY section_description
+            `,
+            [userID, selectedCourseId, activeYear.school_year_id],
+          )
+        : [[]];
+
+      const sectionExists = sections.some(
+        (section) => String(section.department_section_id) === String(department_section_id),
+      );
+      const selectedSectionId = sectionExists
+        ? department_section_id
+        : sections[0]?.department_section_id;
+
+      const [students] = selectedCourseId && selectedSectionId
+        ? await db3.query(
+            `
+            SELECT DISTINCT
+              es.student_number,
+              ptbl.last_name,
+              ptbl.first_name,
+              ptbl.middle_name,
+              ylt.year_description,
+              smt.semester_description,
+              es.midterm,
+              es.finals,
+              es.final_grade,
+              es.en_remarks,
+              st.description AS section_description,
+              pgt.program_code,
+              dst.id,
+              smt.semester_id,
+              es.active_school_year_id,
+              ylt.year_id,
+              ylt.year_description AS current_year,
+              ylt.year_description + 1 AS next_year,
+              cst.course_id,
+              cst.course_description,
+              cst.course_code,
+              cst.course_unit,
+              cst.lab_unit,
+              dt.dprtmnt_name,
+              yrlt.year_level_description
+            FROM enrolled_subject AS es
+              INNER JOIN student_numbering_table AS snt ON es.student_number = snt.student_number
+              INNER JOIN person_table AS ptbl ON snt.person_id = ptbl.person_id
+              INNER JOIN time_table AS tt
+                ON es.department_section_id = tt.department_section_id
+                AND es.course_id = tt.course_id
+                AND es.active_school_year_id = tt.school_year_id
+              INNER JOIN prof_table AS pt ON tt.professor_id = pt.prof_id
+              INNER JOIN dprtmnt_section_table AS dst ON es.department_section_id = dst.id
+              INNER JOIN section_table AS st ON dst.section_id = st.id
+              INNER JOIN curriculum_table AS ct ON es.curriculum_id = ct.curriculum_id
+              INNER JOIN program_table AS pgt ON ct.program_id = pgt.program_id
+              INNER JOIN active_school_year_table AS sy ON es.active_school_year_id = sy.id
+              INNER JOIN year_table AS ylt ON sy.year_id = ylt.year_id
+              INNER JOIN semester_table AS smt ON sy.semester_id = smt.semester_id
+              INNER JOIN course_table AS cst ON es.course_id = cst.course_id
+              LEFT JOIN program_tagging_table AS ptt
+                ON es.curriculum_id = ptt.curriculum_id
+                AND es.course_id = ptt.course_id
+              LEFT JOIN year_level_table AS yrlt ON ptt.year_level_id = yrlt.year_level_id
+              INNER JOIN dprtmnt_curriculum_table AS dct ON ct.curriculum_id = dct.curriculum_id
+              INNER JOIN dprtmnt_table AS dt ON dct.dprtmnt_id = dt.dprtmnt_id
+            WHERE tt.professor_id = ?
+              AND es.course_id = ?
+              AND es.department_section_id = ?
+              AND es.active_school_year_id = ?
+            ORDER BY ptbl.last_name ASC, ptbl.first_name ASC
+            `,
+            [userID, selectedCourseId, selectedSectionId, activeYear.school_year_id],
+          )
+        : [[]];
+
+      res.json({
+        activeSchoolYear: activeYear,
+        courses,
+        sections,
+        selectedCourse: selectedCourseId || "",
+        selectedSection: selectedSectionId || "",
+        students,
+      });
+    } catch (err) {
+      console.error("Grading sheet bootstrap error:", err);
+      res.status(500).json({ message: "Internal Error", err });
+    }
+  });
 
   function getFormattedTimestamp() {
     const now = new Date();
@@ -4924,11 +5098,146 @@ WHERE proctor LIKE ?
     WHERE tt.professor_id = ?
     `;
       const [result] = await db3.query(query, [userID]);
-      console.log(result);
       res.json(result);
     } catch (err) {
       console.error("Server Error: ", err);
       res.status(500).send({ message: "Internal Error", err });
+    }
+  });
+
+  app.get("/api/faculty_masterlist_bootstrap/:userID", async (req, res) => {
+    const { userID } = req.params;
+
+    try {
+      const [[activeYear]] = await db3.query(
+        `
+        SELECT sy.id AS school_year_id, sy.year_id, sy.semester_id
+        FROM active_school_year_table AS sy
+        WHERE sy.astatus = 1
+        LIMIT 1
+        `,
+      );
+
+      if (!activeYear) {
+        return res.json({
+          activeSchoolYear: null,
+          courses: [],
+          sections: [],
+          classDetails: [],
+        });
+      }
+
+      const [courses] = await db3.query(
+        `
+        SELECT DISTINCT
+          tt.course_id,
+          ct.course_description,
+          ct.course_code,
+          sy.year_id,
+          sy.semester_id
+        FROM time_table AS tt
+          INNER JOIN course_table AS ct ON tt.course_id = ct.course_id
+          INNER JOIN active_school_year_table AS sy ON tt.school_year_id = sy.id
+        WHERE tt.professor_id = ?
+          AND ct.office_duty = 0
+          AND sy.id = ?
+        ORDER BY ct.course_code ASC
+        `,
+        [userID, activeYear.school_year_id],
+      );
+
+      const firstCourseId = courses[0]?.course_id || null;
+      const [sections] = firstCourseId
+        ? await db3.query(
+            `
+            SELECT DISTINCT
+              tt.department_section_id,
+              ptbl.program_code,
+              st.description AS section_description
+            FROM time_table AS tt
+              INNER JOIN dprtmnt_section_table AS dst ON tt.department_section_id = dst.id
+              INNER JOIN curriculum_table AS ct ON dst.curriculum_id = ct.curriculum_id
+              INNER JOIN section_table AS st ON dst.section_id = st.id
+              INNER JOIN program_table AS ptbl ON ct.program_id = ptbl.program_id
+            WHERE tt.professor_id = ?
+              AND tt.course_id = ?
+              AND tt.school_year_id = ?
+            GROUP BY tt.department_section_id
+            ORDER BY section_description
+            `,
+            [userID, firstCourseId, activeYear.school_year_id],
+          )
+        : [[]];
+
+      const [classDetails] = await db3.query(
+        `
+        SELECT
+          snt.student_number,
+          es.status,
+          es.is_regular,
+          ct.course_unit,
+          ct.lab_unit,
+          pst.first_name,
+          pst.middle_name,
+          pst.last_name,
+          pst.gender,
+          pst.age,
+          pt.program_code,
+          st.description AS section_description,
+          ct.course_id,
+          ct.course_description,
+          rt.room_description,
+          tt.school_time_start,
+          tt.school_time_end,
+          rdt.description AS day,
+          tt.department_section_id,
+          ct.course_code,
+          sy.year_id,
+          sy.semester_id,
+          yr.year_description AS current_year,
+          yr.year_description + 1 AS next_year,
+          smt.semester_description,
+          dt.dprtmnt_name,
+          yrlt.year_level_description
+        FROM enrolled_subject AS es
+          INNER JOIN student_numbering_table AS snt ON es.student_number = snt.student_number
+          INNER JOIN person_table AS pst ON snt.person_id = pst.person_id
+          INNER JOIN dprtmnt_section_table AS dst ON es.department_section_id = dst.id
+          INNER JOIN section_table AS st ON dst.section_id = st.id
+          INNER JOIN curriculum_table AS cct ON dst.curriculum_id = cct.curriculum_id
+          INNER JOIN program_table AS pt ON cct.program_id = pt.program_id
+          INNER JOIN course_table AS ct ON es.course_id = ct.course_id
+          INNER JOIN active_school_year_table AS sy ON es.active_school_year_id = sy.id
+          INNER JOIN year_table AS yr ON sy.year_id = yr.year_id
+          INNER JOIN semester_table AS smt ON sy.semester_id = smt.semester_id
+          LEFT JOIN time_table AS tt
+            ON tt.school_year_id = es.active_school_year_id
+            AND tt.department_section_id = es.department_section_id
+            AND tt.course_id = es.course_id
+            AND tt.professor_id = ?
+          LEFT JOIN room_day_table AS rdt ON tt.room_day = rdt.id
+          LEFT JOIN room_table AS rt ON tt.department_room_id = rt.room_id
+          INNER JOIN dprtmnt_curriculum_table AS dct ON cct.curriculum_id = dct.curriculum_id
+          INNER JOIN dprtmnt_table AS dt ON dct.dprtmnt_id = dt.dprtmnt_id
+          LEFT JOIN student_status_table AS sst
+            ON es.student_number = sst.student_number
+            AND es.active_school_year_id = sst.active_school_year_id
+          LEFT JOIN year_level_table AS yrlt ON sst.year_level_id = yrlt.year_level_id
+        WHERE es.active_school_year_id = ?
+          AND tt.professor_id = ?
+        `,
+        [userID, activeYear.school_year_id, userID],
+      );
+
+      res.json({
+        activeSchoolYear: activeYear,
+        courses,
+        sections,
+        classDetails,
+      });
+    } catch (err) {
+      console.error("Faculty masterlist bootstrap error:", err);
+      res.status(500).json({ message: "Internal Error", err });
     }
   });
 

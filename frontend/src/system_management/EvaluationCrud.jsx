@@ -62,7 +62,11 @@ const EvaluationCRUD = () => {
     const [selectedSchoolYear, setSelectedSchoolYear] = useState('');
     const [selectedSchoolSemester, setSelectedSchoolSemester] = useState('');
     const [selectedActiveSchoolYear, setSelectedActiveSchoolYear] = useState('');
+    const [activeSchoolYearFilterYear, setActiveSchoolYearFilterYear] = useState('');
     const [selectedId, setSelectedId] = useState(null);
+    const [reuseDialogOpen, setReuseDialogOpen] = useState(false);
+    const [reuseTargetSchoolYear, setReuseTargetSchoolYear] = useState('');
+    const [reuseTargetSchoolSemester, setReuseTargetSchoolSemester] = useState('');
     const [categories, setCategories] = useState([]);
     const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
     const [categoryEditMode, setCategoryEditMode] = useState(false);
@@ -205,6 +209,7 @@ const EvaluationCRUD = () => {
             .then((res) => {
                 if (res.data.length > 0) {
                     setSelectedSchoolYear(res.data[0].year_id);
+                    setActiveSchoolYearFilterYear(res.data[0].year_id);
                     setSelectedSchoolSemester(res.data[0].semester_id);
                 }
             })
@@ -255,6 +260,13 @@ const EvaluationCRUD = () => {
 
             return matchesYear && matchesSemester
         })
+
+    const activeSchoolYear = schoolYears.find((sy) => String(sy.year_id) === String(activeSchoolYearFilterYear));
+    const activeCalendarYear = Number(activeSchoolYear?.current_year) || new Date().getFullYear();
+    const recentSchoolYears = schoolYears.filter((sy) => {
+        const year = Number(sy.current_year);
+        return Number.isFinite(year) && year >= activeCalendarYear - 10 && year <= activeCalendarYear;
+    });
 
     const handleSchoolYearChange = (event) => {
         setSelectedSchoolYear(event.target.value);
@@ -439,6 +451,47 @@ const EvaluationCRUD = () => {
     });
 
 
+
+    const getActiveSchoolYearId = async (yearId, semesterId) => {
+        const res = await axios.get(`${API_BASE_URL}/get_selecterd_year/${yearId}/${semesterId}`);
+        return res.data?.[0]?.school_year_id || null;
+    };
+
+    const handleReuseQuestions = async () => {
+        if (!canCreate) {
+            alert("You do not have permission to reuse questions");
+            return;
+        }
+
+        if (!selectedActiveSchoolYear || !reuseTargetSchoolYear || !reuseTargetSchoolSemester) {
+            alert("Please select a source filter and target semester.");
+            return;
+        }
+
+        try {
+            const targetActiveSchoolYear = await getActiveSchoolYearId(reuseTargetSchoolYear, reuseTargetSchoolSemester);
+
+            if (!targetActiveSchoolYear) {
+                alert("Target school year and semester were not found.");
+                return;
+            }
+
+            const response = await axios.post(`${API_BASE_URL}/reuse_questions`, {
+                source_school_year_id: selectedActiveSchoolYear,
+                target_school_year_id: targetActiveSchoolYear,
+            }, getAuditHeaders());
+
+            setSnackbarMessage(response.data.message);
+            setOpenSnackbar(true);
+            setReuseDialogOpen(false);
+            setReuseTargetSchoolYear("");
+            setReuseTargetSchoolSemester("");
+            fetchQuestions();
+        } catch (err) {
+            console.error("Error reusing questions:", err);
+            alert(err.response?.data?.message || "Failed to reuse questions");
+        }
+    };
 
     // Put this at the very bottom before the return 
     if (loading || hasAccess === null) {
@@ -680,6 +733,14 @@ const EvaluationCRUD = () => {
                                         Add Category
                                     </Button>
 
+                                    <Button
+                                        variant="contained"
+                                        sx={{ backgroundColor: "#2e7d32", color: "white" }}
+                                        onClick={() => setReuseDialogOpen(true)}
+                                    >
+                                        Reuse Questions
+                                    </Button>
+
 
                                     <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                                         <FormControl sx={{ width: "350px" }} size="small">
@@ -691,8 +752,8 @@ const EvaluationCRUD = () => {
                                                 value={selectedSchoolYear}
                                                 onChange={handleSchoolYearChange}
                                             >
-                                                {schoolYears.length > 0 ? (
-                                                    schoolYears.map((sy) => (
+                                                {recentSchoolYears.length > 0 ? (
+                                                    recentSchoolYears.map((sy) => (
                                                         <MenuItem value={sy.year_id} key={sy.year_id}>
                                                             {sy.current_year} - {sy.next_year}
                                                         </MenuItem>
@@ -1210,6 +1271,105 @@ const EvaluationCRUD = () => {
                     >
                         <SaveIcon fontSize="small" style={{ marginRight: 6 }} />
                         Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            <Dialog
+                open={reuseDialogOpen}
+                onClose={() => setReuseDialogOpen(false)}
+                fullWidth
+                maxWidth="sm"
+            >
+                <DialogTitle
+                    sx={{
+                        background: settings?.header_color || "#1976d2",
+                        color: "#fff",
+                        fontWeight: 700,
+                        fontSize: "1.1rem",
+                        py: 2,
+                        mb: 2
+                    }}
+                >
+                    Reuse Evaluation Questions
+                </DialogTitle>
+                <DialogContent sx={{ p: 3 }}>
+                    <Stack spacing={2}>
+                        <Alert severity="info">
+                            This will reuse all questions from the currently filtered school year and semester into the target semester.
+                        </Alert>
+                        <Typography fontWeight={700}>
+                            Questions to Reuse ({filteredQuestion.length}):
+                        </Typography>
+                        <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 260 }}>
+                            <Table size="small" stickyHeader>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell sx={{ fontWeight: 700, width: 56 }}>#</TableCell>
+                                        <TableCell sx={{ fontWeight: 700 }}>Question</TableCell>
+                                        <TableCell sx={{ fontWeight: 700, width: 120 }}>Category</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {filteredQuestion.length > 0 ? (
+                                        filteredQuestion.map((question, index) => (
+                                            <TableRow key={`${question.school_year}-${question.question_id}`}>
+                                                <TableCell>{index + 1}</TableCell>
+                                                <TableCell>{question.question_description}</TableCell>
+                                                <TableCell>{question.category}</TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={3} align="center">
+                                                No questions found for the selected source filter.
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                        <Typography fontWeight={700}>
+                            Target School Year:
+                        </Typography>
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Target School Year</InputLabel>
+                            <Select
+                                label="Target School Year"
+                                value={reuseTargetSchoolYear}
+                                onChange={(e) => setReuseTargetSchoolYear(e.target.value)}
+                            >
+                                {recentSchoolYears.map((sy) => (
+                                    <MenuItem value={sy.year_id} key={sy.year_id}>
+                                        {sy.current_year} - {sy.next_year}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                        <Typography fontWeight={700}>
+                            Target Semester:
+                        </Typography>
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Target Semester</InputLabel>
+                            <Select
+                                label="Target Semester"
+                                value={reuseTargetSchoolSemester}
+                                onChange={(e) => setReuseTargetSchoolSemester(e.target.value)}
+                            >
+                                {schoolSemester.map((sem) => (
+                                    <MenuItem value={sem.semester_id} key={sem.semester_id}>
+                                        {sem.semester_description}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2, borderTop: "1px solid #e0e0e0" }}>
+                    <Button color="error" variant="outlined" onClick={() => setReuseDialogOpen(false)}>
+                        Cancel
+                    </Button>
+                    <Button variant="contained" onClick={handleReuseQuestions} disabled={filteredQuestion.length === 0}>
+                        Reuse
                     </Button>
                 </DialogActions>
             </Dialog>

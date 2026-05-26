@@ -19,18 +19,15 @@ import {
   Snackbar,
   Alert,
   Chip,
-  Divider,
   CircularProgress,
   Tooltip,
   Checkbox,
 } from "@mui/material";
 import {
   Search as SearchIcon,
-  PersonAdd as EnrollIcon,
   PersonRemove as UnenrollIcon,
   GroupAdd as EnrollAllIcon,
   GroupRemove as UnenrollAllIcon,
-  CheckCircle as EnrolledIcon,
 } from "@mui/icons-material";
 import API_BASE_URL from "../apiConfig";
 import Unauthorized from "../components/Unauthorized";
@@ -57,7 +54,7 @@ const DepartmentSectionTagging = () => {
   const [hasAccess, setHasAccess] = useState(null);
   const [loading, setLoading] = useState(false);
   const [employeeID, setEmployeeID] = useState("");
-  const pageId = 148; // update to correct page id
+  const pageId = 148;
 
   const getAuditHeaders = () => ({
     headers: {
@@ -96,21 +93,21 @@ const DepartmentSectionTagging = () => {
 
   // ── Dropdown data ─────────────────────────────────────────────────────────
   const [departments, setDepartments] = useState([]);
-  const [allCurriculums, setAllCurriculums] = useState([]); // full list, filtered client-side
+  const [allCurriculums, setAllCurriculums] = useState([]);
   const [filteredCurriculums, setFilteredCurriculums] = useState([]);
   const [departmentSections, setDepartmentSections] = useState([]);
   const [schoolYears, setSchoolYears] = useState([]);
   const [semesters, setSemesters] = useState([]);
   const [yearLevels, setYearLevels] = useState([]);
 
-  // ── FILTER SELECTIONS (for search) ───────────────────────────────────────
+  // ── FILTER SELECTIONS ────────────────────────────────────────────────────
   const [filterDepartment, setFilterDepartment] = useState("");
   const [filterCurriculum, setFilterCurriculum] = useState("");
   const [filterYearLevel, setFilterYearLevel] = useState("");
   const [filterYear, setFilterYear] = useState("");
   const [filterSemester, setFilterSemester] = useState("");
 
-  // ── INSERTION SELECTIONS (for enrollment) ────────────────────────────────
+  // ── INSERTION SELECTIONS ─────────────────────────────────────────────────
   const [insertSection, setInsertSection] = useState("");
 
   // ── Load all dropdowns once on mount ─────────────────────────────────────
@@ -141,14 +138,12 @@ const DepartmentSectionTagging = () => {
         setSemesters(sems);
         setYearLevels(yearLevelList);
 
-        // Pre-select active school year/semester
         if (activeRes.data?.length > 0) {
           const active = activeRes.data[0];
           setFilterYear(active.year_id);
           setFilterSemester(active.semester_id);
         }
 
-        // Pre-select first department
         if (depts.length > 0) {
           const firstDept = String(depts[0].dprtmnt_id ?? depts[0].id ?? "");
           setFilterDepartment(firstDept);
@@ -167,13 +162,10 @@ const DepartmentSectionTagging = () => {
       setFilterCurriculum("");
       return;
     }
-
     const filtered = allCurriculums.filter(
       (c) => String(c.dprtmnt_id) === String(filterDepartment)
     );
     setFilteredCurriculums(filtered);
-
-    // Auto-select first curriculum
     if (filtered.length > 0) {
       setFilterCurriculum(String(filtered[0].curriculum_id ?? ""));
     } else {
@@ -186,7 +178,6 @@ const DepartmentSectionTagging = () => {
     (s) => String(s.curriculum_id) === String(filterCurriculum)
   );
 
-  // Auto-select first section when filtered list changes
   useEffect(() => {
     if (filteredSections.length > 0) {
       setInsertSection(String(filteredSections[0].department_section_id ?? ""));
@@ -212,40 +203,13 @@ const DepartmentSectionTagging = () => {
   const [allCurriculumStudents, setAllCurriculumStudents] = useState([]);
   const [enrolledStudents, setEnrolledStudents] = useState([]);
   const [enrolledNumbers, setEnrolledNumbers] = useState(new Set());
-  const [selectedStudentNumbers, setSelectedStudentNumbers] = useState(new Set());
+  // track which student numbers are currently being toggled to prevent double-clicks
+  const [togglingNumbers, setTogglingNumbers] = useState(new Set());
   const latestCurriculumRequestRef = useRef(0);
   const latestEnrolledRequestRef = useRef(0);
 
   const [searched, setSearched] = useState(false);
   const [searching, setSearching] = useState(false);
-
-  const selectableStudents = allCurriculumStudents.filter(
-    (student) => !enrolledNumbers.has(String(student.student_number))
-  );
-  const selectableStudentNumbers = selectableStudents.map((student) =>
-    String(student.student_number)
-  );
-  const selectedStudentCount = selectedStudentNumbers.size;
-  const selectedStudentNumberList = Array.from(selectedStudentNumbers);
-  const allSelectableStudentsSelected =
-    selectableStudentNumbers.length > 0 &&
-    selectableStudentNumbers.every((studentNumber) =>
-      selectedStudentNumbers.has(studentNumber)
-    );
-  const someSelectableStudentsSelected =
-    selectedStudentCount > 0 && !allSelectableStudentsSelected;
-
-  useEffect(() => {
-    setSelectedStudentNumbers((prev) => {
-      const validStudentNumbers = new Set(selectableStudentNumbers);
-      const next = new Set(
-        Array.from(prev).filter((studentNumber) =>
-          validStudentNumbers.has(studentNumber)
-        )
-      );
-      return next.size === prev.size ? prev : next;
-    });
-  }, [allCurriculumStudents, enrolledNumbers]);
 
   // ── Fetch all students under the curriculum ───────────────────────────────
   const fetchCurriculumStudents = async () => {
@@ -272,7 +236,7 @@ const DepartmentSectionTagging = () => {
     }
   };
 
-  // ── Fetch already-enrolled students ────────────────────────────────────────
+  // ── Fetch already-tagged students ─────────────────────────────────────────
   const fetchEnrolledStudents = async () => {
     const requestId = ++latestEnrolledRequestRef.current;
     try {
@@ -300,44 +264,13 @@ const DepartmentSectionTagging = () => {
     }
   };
 
-  // ── Fetch both panels ──────────────────────────────────────────────────────
   const fetchBothPanels = async () => {
-    await Promise.all([
-      fetchCurriculumStudents(),
-      fetchEnrolledStudents(),
-    ]);
+    await Promise.all([fetchCurriculumStudents(), fetchEnrolledStudents()]);
   };
 
   const syncEnrolledState = (students) => {
     setEnrolledStudents(students);
     setEnrolledNumbers(new Set(students.map((s) => String(s.student_number))));
-  };
-
-  const toggleStudentSelection = (studentNumber) => {
-    const safeStudentNumber = String(studentNumber);
-    setSelectedStudentNumbers((prev) => {
-      const next = new Set(prev);
-      if (next.has(safeStudentNumber)) {
-        next.delete(safeStudentNumber);
-      } else {
-        next.add(safeStudentNumber);
-      }
-      return next;
-    });
-  };
-
-  const toggleAllStudentSelection = () => {
-    setSelectedStudentNumbers((prev) => {
-      if (selectableStudentNumbers.length === 0) return prev;
-      if (allSelectableStudentsSelected) return new Set();
-      return new Set(selectableStudentNumbers);
-    });
-  };
-
-  const refreshEnrolledStudentsInBackground = () => {
-    fetchEnrolledStudents().catch((err) => {
-      console.error("Background refresh for enrolled students failed:", err);
-    });
   };
 
   // ── Search ─────────────────────────────────────────────────────────────────
@@ -352,10 +285,7 @@ const DepartmentSectionTagging = () => {
     }
     setSearching(true);
     try {
-      await Promise.all([
-        fetchCurriculumStudents(),
-        fetchEnrolledStudents(),
-      ]);
+      await Promise.all([fetchCurriculumStudents(), fetchEnrolledStudents()]);
       setSearched(true);
     } catch (err) {
       console.error("Search error:", err);
@@ -369,7 +299,7 @@ const DepartmentSectionTagging = () => {
     }
   };
 
-  // ── Enroll / Unenroll ─────────────────────────────────────────────────────
+  // ── Enroll / Unenroll helpers ─────────────────────────────────────────────
   const [actionLoading, setActionLoading] = useState(false);
 
   const getEnrollMeta = () => ({
@@ -379,29 +309,28 @@ const DepartmentSectionTagging = () => {
     year_level_id: filterYearLevel || undefined,
   });
 
-  const buildOptimisticSectionStudent = (studentNumber) => {
+  const insertSectionLabel = (() => {
+    const sec = filteredSections.find(
+      (s) => String(s.department_section_id) === String(insertSection)
+    );
+    if (!sec) return "—";
+    return `${sec.program_code || ""} — ${sec.section_description || ""}`;
+  })();
+
+  const addOptimisticEnrollment = (studentNumber) => {
     const student = allCurriculumStudents.find(
       (s) => String(s.student_number) === String(studentNumber)
     );
-
-    if (!student) return null;
-
-    return {
+    if (!student) return;
+    const nextStudent = {
       ...student,
+      department_section_id: insertSection,
       section_description: insertSectionLabel,
       section: insertSectionLabel,
     };
-  };
-
-  const addOptimisticEnrollment = (studentNumber) => {
-    const nextStudent = buildOptimisticSectionStudent(studentNumber);
-    if (!nextStudent) return;
-
     setEnrolledStudents((prev) => {
       const next = [
-        ...prev.filter(
-          (s) => String(s.student_number) !== String(studentNumber)
-        ),
+        ...prev.filter((s) => String(s.student_number) !== String(studentNumber)),
         nextStudent,
       ];
       setEnrolledNumbers(new Set(next.map((s) => String(s.student_number))));
@@ -419,62 +348,117 @@ const DepartmentSectionTagging = () => {
     });
   };
 
+  // ── Checkbox toggle: tag on check, untag on uncheck ──────────────────────
+  const handleCheckboxToggle = async (student) => {
+    if (!insertSection) {
+      setSnackbar({
+        open: true,
+        message: "Please select a section first.",
+        severity: "warning",
+      });
+      return;
+    }
+
+    const studentNumber = String(student.student_number);
+    const isEnrolled = enrolledNumbers.has(studentNumber);
+
+    // Prevent double-toggle while request is in flight
+    if (togglingNumbers.has(studentNumber)) return;
+    setTogglingNumbers((prev) => new Set(prev).add(studentNumber));
+
+    try {
+      if (isEnrolled) {
+        // ── Untag ───────────────────────────────────────────────────────────
+        const enrolledStudent = enrolledStudents.find(
+          (s) => String(s.student_number) === studentNumber
+        );
+        const actualSectionId =
+          enrolledStudent?.department_section_id || insertSection;
+
+        await axios.put(
+          `${API_BASE_URL}/unenrolled_student_in_section/${studentNumber}`,
+          {
+            curriculum_id: filterCurriculum,
+            active_school_year_id: activeSYID,
+            department_section_id: actualSectionId,
+          },
+          getAuditHeaders()
+        );
+        removeOptimisticEnrollment(studentNumber);
+        setSnackbar({
+          open: true,
+          message: `Student ${studentNumber} untagged successfully.`,
+          severity: "success",
+        });
+      } else {
+        // ── Tag ─────────────────────────────────────────────────────────────
+        await axios.put(
+          `${API_BASE_URL}/enrolled_student_in_section/${studentNumber}`,
+          getEnrollMeta(),
+          getAuditHeaders()
+        );
+        addOptimisticEnrollment(studentNumber);
+        setSnackbar({
+          open: true,
+          message: `Student ${studentNumber} tagged successfully.`,
+          severity: "success",
+        });
+      }
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: isEnrolled
+          ? `Failed to untag ${studentNumber}.`
+          : `Failed to tag ${studentNumber}.`,
+        severity: "error",
+      });
+    } finally {
+      setTogglingNumbers((prev) => {
+        const next = new Set(prev);
+        next.delete(studentNumber);
+        return next;
+      });
+    }
+  };
+
   // ── Enroll All ────────────────────────────────────────────────────────────
   const handleEnrollAll = async () => {
     if (!insertSection) {
       setSnackbar({
         open: true,
-        message: "Please select a section before enrolling.",
+        message: "Please select a section before tagging.",
         severity: "warning",
       });
       return;
     }
     setActionLoading(true);
     try {
-      const enrollingSelectedStudents = selectedStudentCount > 0;
-      const payload = {
-        ...getEnrollMeta(),
-        ...(enrollingSelectedStudents
-          ? { student_numbers: selectedStudentNumberList }
-          : {}),
-      };
       const res = await axios.put(
         `${API_BASE_URL}/enrolled_student_in_section`,
-        payload,
+        getEnrollMeta(),
         getAuditHeaders()
       );
-      const optimisticStudentNumbers = enrollingSelectedStudents
-        ? new Set(selectedStudentNumberList)
-        : null;
       syncEnrolledState([
         ...enrolledStudents,
         ...allCurriculumStudents
-          .filter((student) => {
-            const studentNumber = String(student.student_number);
-            return (
-              !enrolledNumbers.has(studentNumber) &&
-              (!optimisticStudentNumbers || optimisticStudentNumbers.has(studentNumber))
-            );
-          })
+          .filter((student) => !enrolledNumbers.has(String(student.student_number)))
           .map((student) => ({
             ...student,
+            department_section_id: insertSection,
             section_description: insertSectionLabel,
             section: insertSectionLabel,
           })),
       ]);
-      setSelectedStudentNumbers(new Set());
       setSnackbar({
         open: true,
-        message: res.data?.message || (enrollingSelectedStudents
-          ? "Selected students enrolled successfully."
-          : "Students enrolled successfully."),
+        message: res.data?.message || "All students tagged successfully.",
         severity: "success",
       });
       fetchBothPanels().catch((err) => {
-        console.error("Background refresh after enroll all failed:", err);
+        console.error("Background refresh after tag all failed:", err);
       });
     } catch (err) {
-      setSnackbar({ open: true, message: "Enroll all failed.", severity: "error" });
+      setSnackbar({ open: true, message: "Tag all failed.", severity: "error" });
     } finally {
       setActionLoading(false);
     }
@@ -485,7 +469,7 @@ const DepartmentSectionTagging = () => {
     if (!insertSection) {
       setSnackbar({
         open: true,
-        message: "Please select a section before unenrolling.",
+        message: "Please select a section before untagging.",
         severity: "warning",
       });
       return;
@@ -500,70 +484,46 @@ const DepartmentSectionTagging = () => {
       syncEnrolledState([]);
       setSnackbar({
         open: true,
-        message: res.data?.message || "All students unenrolled successfully.",
+        message: res.data?.message || "All students untagged successfully.",
         severity: "success",
       });
       fetchBothPanels().catch((err) => {
-        console.error("Background refresh after unenroll all failed:", err);
+        console.error("Background refresh after untag all failed:", err);
       });
     } catch (err) {
-      setSnackbar({ open: true, message: "Unenroll all failed.", severity: "error" });
+      setSnackbar({ open: true, message: "Untag all failed.", severity: "error" });
     } finally {
       setActionLoading(false);
     }
   };
 
-  // ── Enroll Single ─────────────────────────────────────────────────────────
-  const handleEnrollSingle = async (studentNumber) => {
-    if (!insertSection) {
-      setSnackbar({
-        open: true,
-        message: "Please select a section before enrolling.",
-        severity: "warning",
-      });
-      return;
-    }
-    try {
-      await axios.put(
-        `${API_BASE_URL}/enrolled_student_in_section/${studentNumber}`,
-        getEnrollMeta(),
-        getAuditHeaders()
-      );
-      addOptimisticEnrollment(studentNumber);
-      setSnackbar({
-        open: true,
-        message: `Student ${studentNumber} enrolled successfully.`,
-        severity: "success",
-      });
-      refreshEnrolledStudentsInBackground();
-    } catch (err) {
-      setSnackbar({
-        open: true,
-        message: `Failed to enroll ${studentNumber}.`,
-        severity: "error",
-      });
-    }
-  };
-
-  // ── Unenroll Single ───────────────────────────────────────────────────────
+  // ── Unenroll Single (from right panel) ───────────────────────────────────
   const handleUnenrollSingle = async (studentNumber) => {
+    const enrolledStudent = enrolledStudents.find(
+      (s) => String(s.student_number) === String(studentNumber)
+    );
+    const actualSectionId = enrolledStudent?.department_section_id || insertSection;
+
     try {
       await axios.put(
         `${API_BASE_URL}/unenrolled_student_in_section/${studentNumber}`,
-        getEnrollMeta(),
+        {
+          curriculum_id: filterCurriculum,
+          active_school_year_id: activeSYID,
+          department_section_id: actualSectionId,
+        },
         getAuditHeaders()
       );
       removeOptimisticEnrollment(studentNumber);
       setSnackbar({
         open: true,
-        message: `Student ${studentNumber} unenrolled successfully.`,
+        message: `Student ${studentNumber} untagged successfully.`,
         severity: "success",
       });
-      refreshEnrolledStudentsInBackground();
     } catch (err) {
       setSnackbar({
         open: true,
-        message: `Failed to unenroll ${studentNumber}.`,
+        message: `Failed to untag ${studentNumber}.`,
         severity: "error",
       });
     }
@@ -573,7 +533,8 @@ const DepartmentSectionTagging = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
 
   // ── Guard ─────────────────────────────────────────────────────────────────
-  if (loading || hasAccess === null) return <LoadingOverlay open={loading} message="Loading..." />;
+  if (loading || hasAccess === null)
+    return <LoadingOverlay open={loading} message="Loading..." />;
   if (!hasAccess) return <Unauthorized />;
 
   // ── Shared table styles ───────────────────────────────────────────────────
@@ -594,15 +555,6 @@ const DepartmentSectionTagging = () => {
   };
 
   const canManageStudents = Boolean(filterCurriculum && insertSection && activeSYID);
-
-  // ── Helper: get selected section label ───────────────────────────────────
-  const insertSectionLabel = (() => {
-    const sec = filteredSections.find(
-      (s) => String(s.department_section_id) === String(insertSection)
-    );
-    if (!sec) return "—";
-    return `${sec.program_code || ""} — ${sec.section_description || ""}`;
-  })();
 
   return (
     <Box
@@ -627,11 +579,7 @@ const DepartmentSectionTagging = () => {
       >
         <Typography
           variant="h4"
-          sx={{
-            fontWeight: "bold",
-            color: titleColor,
-            fontSize: "36px",
-          }}
+          sx={{ fontWeight: "bold", color: titleColor, fontSize: "36px" }}
         >
           DEPARTMENT SECTION TAGGING
         </Typography>
@@ -640,18 +588,15 @@ const DepartmentSectionTagging = () => {
       <hr style={{ border: "1px solid #ccc", width: "100%" }} />
       <br />
       <br />
+
       <TableContainer
         component={Paper}
         sx={{ width: "100%", border: `1px solid ${borderColor}` }}
       >
         <Table>
-          <TableHead
-            sx={{ backgroundColor: settings?.header_color || "#1976d2" }}
-          >
+          <TableHead sx={{ backgroundColor: settings?.header_color || "#1976d2" }}>
             <TableRow>
-              <TableCell sx={{ color: "white", textAlign: "Center" }}>
-                Filter
-              </TableCell>
+              <TableCell sx={{ color: "white", textAlign: "Center" }}>Student Tagged Section</TableCell>
             </TableRow>
           </TableHead>
         </Table>
@@ -659,13 +604,7 @@ const DepartmentSectionTagging = () => {
 
       <Paper
         elevation={0}
-        sx={{
-          border: `1px solid ${borderColor}`,
-
-          p: 2.5,
-          mb: 2,
-          backgroundColor: "#fff",
-        }}
+        sx={{ border: `1px solid ${borderColor}`, p: 2.5, mb: 2, backgroundColor: "#fff" }}
       >
         <Typography
           sx={{
@@ -681,7 +620,6 @@ const DepartmentSectionTagging = () => {
         </Typography>
 
         <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "flex-end" }}>
-
           {/* Department */}
           <FormControl size="small" sx={{ minWidth: 200, flex: "1 1 200px" }}>
             <InputLabel>Department</InputLabel>
@@ -716,7 +654,8 @@ const DepartmentSectionTagging = () => {
                 const val = String(c.curriculum_id ?? "");
                 return (
                   <MenuItem key={val} value={val}>
-                    ({c.program_code}) {c.program_description} {c.major ? `- ${c.major}` : ""} [{c.year_description}]
+                    ({c.program_code}) {c.program_description}{" "}
+                    {c.major ? `- ${c.major}` : ""} [{c.year_description}]
                   </MenuItem>
                 );
               })}
@@ -778,9 +717,11 @@ const DepartmentSectionTagging = () => {
           <Button
             variant="contained"
             startIcon={
-              searching
-                ? <CircularProgress size={16} color="inherit" />
-                : <SearchIcon />
+              searching ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <SearchIcon />
+              )
             }
             disabled={searching}
             onClick={handleSearch}
@@ -799,9 +740,8 @@ const DepartmentSectionTagging = () => {
           </Button>
         </Box>
 
-          <Box sx={{ display: "flex", gap: 2, mt:3, flexWrap: "wrap", alignItems: "flex-end" }}>
-
-          {/* Section — filtered by selected curriculum */}
+        <Box sx={{ display: "flex", gap: 2, mt: 3, flexWrap: "wrap", alignItems: "flex-end" }}>
+          {/* Section */}
           <FormControl size="small" sx={{ minWidth: 280, flex: "1 1 280px" }}>
             <InputLabel>Section</InputLabel>
             <Select
@@ -822,12 +762,9 @@ const DepartmentSectionTagging = () => {
             </Select>
           </FormControl>
 
-          {/* Selected section info chip */}
           {insertSection && (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Typography sx={{ fontSize: "12px", color: "#666" }}>
-                Selected:
-              </Typography>
+              <Typography sx={{ fontSize: "12px", color: "#666" }}>Selected:</Typography>
               <Chip
                 label={insertSectionLabel}
                 size="small"
@@ -844,18 +781,12 @@ const DepartmentSectionTagging = () => {
         </Box>
       </Paper>
 
-    
-
-      {/* ── Enroll All / Unenroll All ─────────────────────────────────────── */}
+      {/* ── Tag All / Untag All ───────────────────────────────────────────── */}
       <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
-
-        {/* Enroll All */}
         <Tooltip
           title={
             canManageStudents
-              ? selectedStudentCount > 0
-                ? `Enroll ${selectedStudentCount} selected student(s) into ${insertSectionLabel}`
-                : `Enroll all students into ${insertSectionLabel}`
+              ? `Tag all students into ${insertSectionLabel}`
               : "Please complete filter and select a section first"
           }
         >
@@ -863,9 +794,11 @@ const DepartmentSectionTagging = () => {
             <Button
               variant="contained"
               startIcon={
-                actionLoading
-                  ? <CircularProgress size={14} color="inherit" />
-                  : <EnrollAllIcon />
+                actionLoading ? (
+                  <CircularProgress size={14} color="inherit" />
+                ) : (
+                  <EnrollAllIcon />
+                )
               }
               disabled={actionLoading || !canManageStudents}
               onClick={handleEnrollAll}
@@ -881,18 +814,15 @@ const DepartmentSectionTagging = () => {
                 "&:hover": { backgroundColor: mainButtonColor, opacity: 0.85 },
               }}
             >
-              {selectedStudentCount > 0
-                ? `Enroll Selected (${selectedStudentCount})`
-                : "Enroll All"}
+              Tag All
             </Button>
           </span>
         </Tooltip>
 
-        {/* Unenroll All */}
         <Tooltip
           title={
             canManageStudents
-              ? "Unenroll all enrolled students from this section"
+              ? "Untag all students from this section"
               : "Please complete filter and select a section first"
           }
         >
@@ -914,7 +844,7 @@ const DepartmentSectionTagging = () => {
                 "&:hover": { backgroundColor: "#ffebee", border: "2px solid #c62828" },
               }}
             >
-              Unenroll All
+              Untag All
             </Button>
           </span>
         </Tooltip>
@@ -940,47 +870,19 @@ const DepartmentSectionTagging = () => {
                 height: "20px",
               }}
             />
-            {selectedStudentCount > 0 && (
-              <Chip
-                label={`${selectedStudentCount} selected`}
-                size="small"
-                onDelete={() => setSelectedStudentNumbers(new Set())}
-                sx={{
-                  backgroundColor: "#fff3e0",
-                  color: "#ef6c00",
-                  fontWeight: 700,
-                  fontSize: "11px",
-                  height: "20px",
-                }}
-              />
-            )}
           </Box>
 
-          <Paper
-            elevation={0}
-            sx={{ border: `1px solid ${borderColor}`, overflow: "hidden" }}
-          >
+          <Paper elevation={0} sx={{ border: `1px solid ${borderColor}`, overflow: "hidden" }}>
             <TableContainer sx={{ maxHeight: 480 }}>
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ ...thStyle, width: "48px" }}>
-                      <Checkbox
-                        size="small"
-                        checked={allSelectableStudentsSelected}
-                        indeterminate={someSelectableStudentsSelected}
-                        disabled={selectableStudentNumbers.length === 0}
-                        onChange={toggleAllStudentSelection}
-                        sx={{
-                          color: "#fff",
-                          p: 0,
-                          "&.Mui-checked": { color: "#fff" },
-                          "&.MuiCheckbox-indeterminate": { color: "#fff" },
-                        }}
-                      />
+                    {/* Tag checkbox column */}
+                    <TableCell sx={{ ...thStyle, width: "52px", textAlign: "center", border: `1px solid ${borderColor}` }}>
+                      Tag
                     </TableCell>
-                    {["Student No.", "Student Name", "Program", "Year Level", "Action"].map((h) => (
-                      <TableCell key={h} sx={thStyle}>{h}</TableCell>
+                    {["#", "Student No.", "Student Name", "Program", "Year Level"].map((h) => (
+                      <TableCell key={h} sx={{ ...thStyle, textAlign: "center", border: `1px solid ${borderColor}` }}>{h}</TableCell>
                     ))}
                   </TableRow>
                 </TableHead>
@@ -998,119 +900,60 @@ const DepartmentSectionTagging = () => {
                     </TableRow>
                   ) : (
                     allCurriculumStudents.map((s, idx) => {
-                      const isEnrolled = enrolledNumbers.has(String(s.student_number));
                       const studentNumber = String(s.student_number);
-                      const isSelected = selectedStudentNumbers.has(studentNumber);
+                      const isTagged = enrolledNumbers.has(studentNumber);
+                      const isToggling = togglingNumbers.has(studentNumber);
+
                       return (
                         <TableRow
                           key={s.student_number}
                           onClick={() => {
-                            if (!isEnrolled && !actionLoading) {
-                              toggleStudentSelection(s.student_number);
-                            }
+                            if (!actionLoading && !isToggling) handleCheckboxToggle(s);
                           }}
                           sx={{
-                            backgroundColor: isEnrolled
-                              ? "#f1f8f1"
-                              : isSelected
-                                ? "#fff8e1"
-                                : "inherit",
-                            cursor: isEnrolled || actionLoading ? "default" : "pointer",
+                            backgroundColor: isTagged
+                              ? "#e8f5e9"                          // tagged → always green tint
+                              : idx % 2 === 0 ? "#ffffff" : "lightgray",  // alternating white / light gray
+                            cursor: actionLoading || isToggling ? "wait" : "pointer",
                             transition: "background-color 0.15s ease",
-                            "&:hover": {
-                              backgroundColor: isEnrolled
-                                ? "#e8f5e9"
-                                : isSelected
-                                  ? "#ffecb3"
-                                  : "#fffde7",
-                            },
+
                           }}
                         >
+                          {/* 25×25 checkbox */}
                           <TableCell
-                            sx={{
-                              ...tdStyle,
-                              color: "#888",
-                              width: "48px",
-                            }}
+                            sx={{ ...tdStyle, textAlign: "center", width: "52px", border: `1px solid ${borderColor}` }}
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            <Box
-                              component="span"
-                              className="row-index"
-                              sx={{
-                                display: isSelected ? "none" : "inline",
-                              }}
-                            >
-                              {idx + 1}
-                            </Box>
-                            <Checkbox
-                              className="row-checkbox"
-                              size="small"
-                              checked={isSelected}
-                              disabled={isEnrolled || actionLoading}
-                              onChange={() => toggleStudentSelection(s.student_number)}
-                              onClick={(event) => event.stopPropagation()}
-                              sx={{
-                                display: isSelected ? "inline-flex" : "none",
-                                p: 0,
-                              }}
-                            />
+                            {isToggling ? (
+                              <CircularProgress
+                                size={18}
+                                sx={{ color: mainButtonColor, display: "block", mx: "auto" }}
+                              />
+                            ) : (
+                              <Checkbox
+                                checked={isTagged}
+                                disabled={actionLoading || !insertSection}
+                                onChange={() => handleCheckboxToggle(s)}
+                                sx={{
+                                  p: 0,
+                                  width: "35px",
+                                  height: "35px",
+                                  "& .MuiSvgIcon-root": { fontSize: "25px" },
+                                  color: "#000",
+                                  "&.Mui-checked": { color: mainButtonColor },
+                                }}
+                              />
+                            )}
                           </TableCell>
-                          <TableCell sx={tdStyle}>{s.student_number}</TableCell>
-                          <TableCell sx={tdStyle}>
+
+                          <TableCell sx={{ ...tdStyle, color: "#888", border: `1px solid ${borderColor}` }}>{idx + 1}</TableCell>
+                          <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>{s.student_number}</TableCell>
+                          <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>
                             {s.last_name}, {s.first_name} {s.middle_name || ""}
                           </TableCell>
-                          <TableCell sx={tdStyle}>{s.program_code}</TableCell>
-                          <TableCell sx={tdStyle}>
+                          <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>{s.program_code}</TableCell>
+                          <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>
                             {s.year_level_description || s.year_level}
-                          </TableCell>
-                          <TableCell sx={tdStyle}>
-                            {isEnrolled ? (
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                disabled
-                                startIcon={<EnrolledIcon sx={{ fontSize: "14px !important" }} />}
-                                sx={{
-                                  fontSize: "11px",
-                                  fontWeight: 600,
-                                  height: "28px",
-                                  px: 1.5,
-                                  borderRadius: "6px",
-                                  textTransform: "none",
-                                  minWidth: "unset",
-                                  color: "#2e7d32 !important",
-                                  borderColor: "#2e7d32 !important",
-                                  opacity: 0.7,
-                                }}
-                              >
-                                Enrolled
-                              </Button>
-                            ) : (
-                              <Button
-                                size="small"
-                                variant="contained"
-                                startIcon={<EnrollIcon sx={{ fontSize: "14px !important" }} />}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleEnrollSingle(s.student_number);
-                                }}
-                                disabled={!insertSection}
-                                sx={{
-                                  backgroundColor: mainButtonColor,
-                                  color: "#fff",
-                                  fontSize: "11px",
-                                  fontWeight: 600,
-                                  height: "28px",
-                                  px: 1.5,
-                                  borderRadius: "6px",
-                                  textTransform: "none",
-                                  minWidth: "unset",
-                                  "&:hover": { backgroundColor: mainButtonColor, opacity: 0.85 },
-                                }}
-                              >
-                                Enroll
-                              </Button>
-                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -1122,11 +965,11 @@ const DepartmentSectionTagging = () => {
           </Paper>
         </Box>
 
-        {/* ── RIGHT: Enrolled Students ──────────────────────────────────── */}
+        {/* ── RIGHT: Tagged Students ────────────────────────────────────── */}
         <Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
             <Typography fontWeight={600} fontSize="14px" color="#333">
-              Enrolled Students
+              Tagged Students
             </Typography>
             <Chip
               label={enrolledStudents.length}
@@ -1141,16 +984,13 @@ const DepartmentSectionTagging = () => {
             />
           </Box>
 
-          <Paper
-            elevation={0}
-            sx={{ border: `1px solid ${borderColor}`, overflow: "hidden" }}
-          >
+          <Paper elevation={0} sx={{ border: `1px solid ${borderColor}`, overflow: "hidden" }}>
             <TableContainer sx={{ maxHeight: 480 }}>
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
                     {["#", "Student No.", "Student Name", "Program", "Year Level", "Section", "Action"].map((h) => (
-                      <TableCell key={h} sx={thStyle}>{h}</TableCell>
+                      <TableCell key={h} sx={{ ...thStyle, textAlign: "center", border: `1px solid ${borderColor}` }}>{h}</TableCell>
                     ))}
                   </TableRow>
                 </TableHead>
@@ -1161,7 +1001,7 @@ const DepartmentSectionTagging = () => {
                         colSpan={7}
                         sx={{ textAlign: "center", py: 4, color: "#aaa", fontSize: "13px" }}
                       >
-                        No enrolled students yet
+                        No tagged students yet
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -1170,18 +1010,18 @@ const DepartmentSectionTagging = () => {
                         key={s.student_number}
                         sx={{ "&:hover": { backgroundColor: "#fff8e1" } }}
                       >
-                        <TableCell sx={{ ...tdStyle, color: "#888", width: "36px" }}>
+                        <TableCell sx={{ ...tdStyle, color: "#888", width: "36px", border: `1px solid ${borderColor}`  }}>
                           {idx + 1}
                         </TableCell>
-                        <TableCell sx={tdStyle}>{s.student_number}</TableCell>
-                        <TableCell sx={tdStyle}>
+                        <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>{s.student_number}</TableCell>
+                        <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>
                           {s.last_name}, {s.first_name} {s.middle_name || ""}
                         </TableCell>
-                        <TableCell sx={tdStyle}>{s.program_code}</TableCell>
-                        <TableCell sx={tdStyle}>
+                        <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>{s.program_code}</TableCell>
+                        <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>
                           {s.year_level_description || s.year_level}
                         </TableCell>
-                        <TableCell sx={tdStyle}>
+                        <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>
                           <Chip
                             label={s.section_description || s.section || "—"}
                             size="small"
@@ -1195,7 +1035,7 @@ const DepartmentSectionTagging = () => {
                             }}
                           />
                         </TableCell>
-                        <TableCell sx={tdStyle}>
+                        <TableCell sx={{ ...tdStyle, border: `1px solid ${borderColor}` }}>
                           <Button
                             size="small"
                             variant="outlined"
@@ -1217,7 +1057,7 @@ const DepartmentSectionTagging = () => {
                               },
                             }}
                           >
-                            Unenroll
+                            Untag
                           </Button>
                         </TableCell>
                       </TableRow>

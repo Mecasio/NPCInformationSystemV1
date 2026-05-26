@@ -166,6 +166,7 @@ const CertificateOfRegistration = forwardRef(
     const [approvedBy, setApprovedBy] = useState(null);
     const [approvedBySignatureMissing, setApprovedBySignatureMissing] =
       useState(false);
+    const [qrCodeMissing, setQrCodeMissing] = useState(false);
     const approvedBySignature =
       typeof approvedBy?.signature_image === "string"
         ? approvedBy.signature_image.trim()
@@ -182,6 +183,10 @@ const CertificateOfRegistration = forwardRef(
     useEffect(() => {
       setApprovedBySignatureMissing(false);
     }, [approvedBySignatureUrl]);
+
+    useEffect(() => {
+      setQrCodeMissing(false);
+    }, [effectiveStudentNumber]);
 
     useEffect(() => {
       const fetchApprovedBy = async () => {
@@ -674,6 +679,7 @@ const CertificateOfRegistration = forwardRef(
       : selectedPaymentData?.matriculation_remark
         ? "Scholar"
         : "";
+    const showFreeTuitionStamp = Boolean(effectiveStudentNumber);
 
     // Fetch all departments when component mounts
     useEffect(() => {
@@ -693,6 +699,9 @@ const CertificateOfRegistration = forwardRef(
       const num = Number(value);
       return Number.isFinite(num) ? Math.round(num) : 0;
     };
+    const subjectCellContentOffset = {
+      transform: "translateY(-5px)",
+    };
 
     const totalCourseUnits = enrolled.reduce(
       (sum, item) => sum + toWholeUnit(item.course_unit),
@@ -703,6 +712,44 @@ const CertificateOfRegistration = forwardRef(
       0,
     );
     const totalCombined = totalCourseUnits + totalLabUnits;
+    const corAssessedFeeRows = [
+      {
+        label: `Tuition (${totalCombined || 0} unit(s))`,
+        value: selectedPaymentData?.tuition_fees,
+      },
+      { label: "Athletic Fee", value: selectedPaymentData?.athletic_fees },
+      { label: "Cultural Fee", value: selectedPaymentData?.cultural_fees },
+      {
+        label: "Development Fee",
+        value: selectedPaymentData?.development_fees,
+      },
+      { label: "Guidance Fee", value: selectedPaymentData?.guidance_fees },
+      { label: "Library Fee", value: selectedPaymentData?.library_fees },
+      {
+        label: "Medical and Dental Fee",
+        value: selectedPaymentData?.medical_and_dental_fees,
+      },
+      {
+        label: "Registration Fee",
+        value: selectedPaymentData?.registration_fees,
+      },
+      { label: "Computer Fee", value: selectedPaymentData?.computer_fees },
+    ];
+    const corAssessmentRows = [
+      { label: "Total Assessment", value: selectedPaymentData?.total_tosf },
+      { label: "Less Financial Aid", value: "" },
+      { label: "Net Assessed", value: "" },
+      { label: "Credit Memo", value: "" },
+      { label: "Total Discount", value: "" },
+      { label: "Total Payment", value: "" },
+      { label: "Outstanding Balance", value: "" },
+    ];
+    const corRefundRules = [
+      "1. Full refund of tuition fee - Before the start of classes.",
+      "2. 80% refund of tuition fee - within 1 week from the start of classes.",
+      "3. 50% refund - within 2 weeks from the start of classes.",
+      "4. No refund - after the 2nd week of classes.",
+    ];
     const formatGender = (value) => {
       if (value === null || value === undefined || value === "") return "";
       if (Number(value) === 0) return "Male";
@@ -761,6 +808,11 @@ const CertificateOfRegistration = forwardRef(
               <style>{`
     .certificate-wrapper {
       position: relative;
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      background: white;
+      overflow: visible;
     }
 
     .certificate-watermark {
@@ -780,12 +832,391 @@ const CertificateOfRegistration = forwardRef(
     }
 
     @media print {
+      @page {
+        size: A4;
+        margin: 0;
+      }
+
+      .certificate-wrapper {
+        width: 210mm;
+        min-height: 297mm;
+      }
+
       .certificate-watermark {
         color: rgba(0, 0, 0, 0.15); /* a bit darker so it prints */
       }
       button {
         display: none;
       }
+    }
+
+    .cor-fees-start input,
+    .cor-fees-start ~ tr input,
+    .cor-fees-start td > i,
+    .cor-fees-start ~ tr td > i {
+      transform: translateY(-10px);
+      display: inline-block;
+    }
+
+    .cor-student-info-row input,
+    .cor-student-info-row td > b {
+      transform: translateY(-5px);
+      display: inline-block;
+    }
+
+    .cor-content-offset,
+    .cor-subject-header-row td > div,
+    .cor-subject-subheader-row .cor-content-offset,
+    .cor-subject-total-row .cor-content-offset {
+      transform: translateY(-5px);
+      display: inline-block;
+    }
+
+    .cor-lower-extra input,
+    .cor-lower-extra img,
+    .cor-lower-extra i {
+      transform: translateY(-10px);
+      display: inline-block;
+    }
+
+    .cor-student-general-info .cor-student-info-row input {
+      transform: translateY(-10px);
+    }
+
+    .cor-student-general-info .cor-shift-left-label {
+      transform: translate(-16px, -10px);
+    }
+
+    .cor-student-general-info .cor-left-value-wide {
+      width: calc(98% + 35px) !important;
+    }
+
+    .cor-student-general-info .cor-content-offset {
+      white-space: nowrap;
+    }
+
+    .cor-fees-start,
+    .cor-fees-start ~ tr {
+      display: none;
+    }
+
+    .cor-fees-div-row td {
+      padding: 0;
+      border-right: 1px solid black;
+    }
+
+    .cor-fees-div-layout {
+      display: grid;
+      grid-template-columns: 20fr 22fr;
+      width: 100%;
+      min-height: 4.05in;
+      font-family: Arial;
+      color: black;
+      transform: translateY(-5px);
+    }
+
+    .cor-fees-left {
+      text-align: left;
+    }
+
+    .cor-fees-title {
+      height: 0.18in;
+      line-height: 0.18in;
+      background: gray;
+      border-top: 1px solid black;
+      border-left: 1px solid black;
+      border-right: 1px solid black;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 4px;
+      text-align: center;
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    .cor-assessed-title {
+      width: 100%;
+      border-bottom: 1px solid black;
+    }
+
+    .cor-schedule-title,
+    .cor-payment-grid {
+      margin-left: -4px;
+      margin-right: -8px;
+      width: auto;
+      box-sizing: border-box;
+    }
+
+    .cor-schedule-title {
+      margin-left: -4px;
+      margin-right: -8px;
+      margin-top: 8px;
+      width: auto;
+    }
+
+    .cor-schedule-title::before {
+      content: "";
+      position: absolute;
+      top: -8px;
+      left: -1px;
+      right: -1px;
+      height: 8px;
+      border-left: 1px solid black;
+      border-right: 1px solid black;
+      box-sizing: border-box;
+    }
+
+    .cor-fees-title span {
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .cor-fees-body {
+      padding: 0 8px 0 4px;
+      text-align: left;
+    }
+
+    .cor-assessment-content {
+      margin-left: -4px;
+      margin-right: -8px;
+      padding: 4px 8px 0 4px;
+      border-left: 1px solid black;
+      border-right: 1px solid black;
+    }
+
+    .cor-fee-line,
+    .cor-assessment-line {
+      display: grid;
+      grid-template-columns: 1fr 72px;
+      align-items: center;
+      min-height: 15px;
+      font-size: 12px;
+      font-weight: bold;
+      line-height: 1;
+      width: 100%;
+    }
+
+    .cor-fee-line span:first-child,
+    .cor-assessment-line span:first-child {
+      text-align: left;
+    }
+
+    .cor-fee-line span:last-child,
+    .cor-assessment-line span:last-child {
+      text-align: right;
+    }
+
+    .cor-assessment-list {
+      margin-top: 14px;
+      padding-left: 54px;
+    }
+
+    .cor-payment-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid black;
+      border-bottom: 1px solid black;
+      border-left: 1px solid black;
+      border-right: 1px solid black;
+      font-size: 12px;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    .cor-payment-cell {
+      min-height: 16px;
+      border-right: 1px solid black;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .cor-payment-cell:nth-child(3n) {
+      border-right: 0;
+    }
+
+    .cor-payment-cell span {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .cor-payment-value {
+      min-height: 16px;
+      border-top: 1px solid black;
+      position: relative;
+    }
+
+    .cor-payment-value span {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .cor-payment-footer {
+      display: grid;
+      grid-template-columns: 172px 1fr;
+      row-gap: 1px;
+      column-gap: 8px;
+      margin-left: -4px;
+      margin-right: -8px;
+      padding-top: 2px;
+      box-sizing: border-box;
+      font-size: 11px;
+      font-weight: bold;
+      align-items: end;
+    }
+
+    .cor-payment-label {
+      display: flex;
+      align-items: center;
+      min-height: 22px;
+      white-space: nowrap;
+    }
+
+    .cor-fee-stamp-row {
+      display: none;
+    }
+
+    .cor-line-value {
+      border-bottom: 1px solid black;
+      text-align: center;
+      min-height: 22px;
+    }
+
+    .cor-fees-right {
+      padding: 12px 12px 0;
+      text-align: center;
+      font-size: 10px;
+      font-weight: bold;
+    }
+
+    .cor-refund-title,
+    .cor-pledge-title {
+      font-weight: bold;
+      text-align: center;
+      font-size: 10px;
+      line-height: 1.1;
+    }
+
+    .cor-refund-list {
+      margin: 4px auto 12px;
+      width: 92%;
+      text-align: left;
+      font-size: 9px;
+      font-style: italic;
+      line-height: 1.35;
+    }
+
+    .cor-pledge-copy {
+      width: 90%;
+      margin: 4px auto 0;
+      font-size: 9px;
+      font-style: italic;
+      line-height: 1.25;
+    }
+
+    .cor-student-signature {
+      width: 68%;
+      margin: 44px auto 0;
+      border-top: 1px solid black;
+      padding-top: 2px;
+      line-height: 12px;
+    }
+
+    .cor-approval-row {
+      position: relative;
+      margin-top: 38px;
+    }
+
+    .cor-approved-block {
+      position: absolute;
+      left: 21px;
+      top: 31px;
+      line-height: 12px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .cor-registrar-signature {
+      width: 76%;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .cor-registrar-signature-slot {
+      height: 31px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .cor-registrar-signature-image {
+      height: 38px;
+      object-fit: contain;
+      width: 150px;
+      display: block;
+      margin-bottom: -6px;
+    }
+
+    .cor-registrar-line {
+      width: 94%;
+      margin: 4px auto 0;
+      border-top: 1px solid black;
+      height: 0;
+    }
+
+    .cor-registrar-name {
+      height: 12px;
+      line-height: 12px;
+      font-weight: bold;
+    }
+
+    .cor-registrar-role {
+      margin-top: 1px;
+      line-height: 11px;
+    }
+
+    .cor-lower-extra {
+      margin-top: -8px !important;
+    }
+
+    .cor-lower-extra-stamp-row {
+      height: 1.9in;
+      vertical-align: bottom;
+    }
+
+    .cor-free-tuition-cell {
+      vertical-align: bottom;
+    }
+
+    .cor-free-tuition-stamp {
+      width: 345px;
+      height: 200px;
+      object-fit: contain;
+      display: block;
+      margin: 0 0 4px 10px;
+    }
+
+    .cor-qr-code-img {
+      width: 125px;
+      height: 125px;
+      object-fit: contain;
+      display: block;
+      margin-left: auto;
+      margin-right: 28px;
+    }
+
+    .cor-footer-time {
+      height: 0.2in;
+      font-size: 14px;
+      text-align: right;
+      vertical-align: bottom;
     }
   `}</style>
 
@@ -1014,7 +1445,7 @@ const CertificateOfRegistration = forwardRef(
                       </td>
                     </tr>
 
-                    <tr>
+                    <tr className="cor-student-info-row">
                       <td
                         colSpan={10}
                         style={{
@@ -1061,6 +1492,7 @@ const CertificateOfRegistration = forwardRef(
                 </table>
 
                 <table
+                  className="cor-student-general-info"
                   style={{
                     borderLeft: "1px solid black",
                     borderTop: "1px solid black",
@@ -1095,14 +1527,16 @@ const CertificateOfRegistration = forwardRef(
                               display: "block",
                             }}
                           >
-                            STUDENT GENERAL INFORMATION
+                            <span className="cor-content-offset">
+                              STUDENT GENERAL INFORMATION
+                            </span>
                           </b>
                         </b>
                       </td>
                     </tr>
 
-                    <tr>
-                      <td colSpan={4} style={{ fontSize: "62.5%" }}>
+                    <tr className="cor-student-info-row">
+                      <td colSpan={4} style={{ fontSize: "62.5%", padding: "0px 8px" }}>
                         <input
                           type="text"
                           value="Student No:"
@@ -1120,8 +1554,9 @@ const CertificateOfRegistration = forwardRef(
                         />
                       </td>
 
-                      <td colSpan={11} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={14} style={{ fontSize: "62.5%", padding: "0px 8px" }}>
                         <input
+                          className="cor-left-value-wide"
                           type="text"
                           value={data[0]?.student_number || ""}
                           readOnly
@@ -1156,7 +1591,7 @@ const CertificateOfRegistration = forwardRef(
                       </td>
 
                       {/* College Display */}
-                      <td colSpan={16} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={14} style={{ fontSize: "62.5%" }}>
                         <input
                           type="text"
                           value={data[0]?.college || ""}
@@ -1171,22 +1606,12 @@ const CertificateOfRegistration = forwardRef(
                             background: "none",
                           }}
                         />
-                        {curriculumOptions.length > 0
-                          ? curriculumOptions
-                            .find(
-                              (item) =>
-                                item?.curriculum_id?.toString() ===
-                                (person?.program ?? "").toString(),
-                            )
-                            ?.program_description?.toUpperCase() ||
-                          (person?.program?.toString()?.toUpperCase() ?? "")
-                          : "LOADING..."}
                       </td>
                     </tr>
 
-                    <tr>
+                    <tr className="cor-student-info-row" >
                       {/* Name Label */}
-                      <td colSpan={4} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={4} style={{ fontSize: "62.5%", padding: "0px 8px" }}>
                         <input
                           type="text"
                           value="Name:"
@@ -1204,8 +1629,9 @@ const CertificateOfRegistration = forwardRef(
                         />
                       </td>
                       {/* Name Value */}
-                      <td colSpan={11} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={14} style={{ fontSize: "62.5%", padding: "0px 8px" }}>
                         <input
+                          className="cor-left-value-wide"
                           type="text"
                           value={`${data[0]?.last_name || ""}, ${data[0]?.first_name || ""} ${data[0]?.middle_name || ""} ${data[0]?.extension || ""}`.trim()}
                           readOnly
@@ -1240,7 +1666,7 @@ const CertificateOfRegistration = forwardRef(
                         />
                       </td>
 
-                      <td colSpan={23} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={20} style={{ fontSize: "62.5%" }}>
                         <input
                           type="text"
                           value={(() => {
@@ -1267,9 +1693,9 @@ const CertificateOfRegistration = forwardRef(
                       </td>
                     </tr>
 
-                    <tr>
+                    <tr className="cor-student-info-row">
                       {/* Gender Label */}
-                      <td colSpan={4} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={4} style={{ fontSize: "62.5%", padding: "0px 8px" }}>
                         <input
                           type="text"
                           value="Gender:"
@@ -1288,8 +1714,9 @@ const CertificateOfRegistration = forwardRef(
                       </td>
 
                       {/* Gender Value */}
-                      <td colSpan={11} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={14} style={{ fontSize: "62.5%", padding: "0px 8px" }}>
                         <input
+                          className="cor-left-value-wide"
                           type="text"
                           value={formatGender(data[0]?.gender)}
                           readOnly
@@ -1323,7 +1750,7 @@ const CertificateOfRegistration = forwardRef(
                           }}
                         />
                       </td>
-                      <td colSpan={9} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={6} style={{ fontSize: "62.5%" }}>
                         <input
                           type="text"
                           readOnly
@@ -1348,6 +1775,7 @@ const CertificateOfRegistration = forwardRef(
                       {/* Curriculum Label */}
                       <td colSpan={5} style={{ fontSize: "62.5%" }}>
                         <input
+                          className="cor-shift-left-label"
                           type="text"
                           value="Curriculum:"
                           readOnly
@@ -1383,8 +1811,8 @@ const CertificateOfRegistration = forwardRef(
                       </td>
                     </tr>
 
-                    <tr>
-                      <td colSpan={4} style={{ fontSize: "50%" }}>
+                    <tr className="cor-student-info-row">
+                      <td colSpan={4} style={{ fontSize: "50%", padding: "0px 8px" }}>
                         <input
                           readOnly
                           type="text"
@@ -1401,8 +1829,9 @@ const CertificateOfRegistration = forwardRef(
                           }}
                         />
                       </td>
-                      <td colSpan={11} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={14} style={{ fontSize: "62.5%", padding: "0px 8px" }}>
                         <input
+                          className="cor-left-value-wide"
                           type="text"
                           value={data[0]?.age || ""}
                           readOnly
@@ -1434,7 +1863,7 @@ const CertificateOfRegistration = forwardRef(
                           }}
                         />
                       </td>
-                      <td colSpan={9} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={6} style={{ fontSize: "62.5%" }}>
                         <input
                           type="text"
                           value={year_Level_Description || ""}
@@ -1445,6 +1874,7 @@ const CertificateOfRegistration = forwardRef(
                             width: "98%",
                             fontSize: "12px",
                             border: "none",
+                            marginLeft: "5px",
                             outline: "none",
                             background: "none",
                           }}
@@ -1452,6 +1882,7 @@ const CertificateOfRegistration = forwardRef(
                       </td>
                       <td colSpan={8} style={{ fontSize: "50%" }}>
                         <input
+                          className="cor-shift-left-label"
                           type="text"
                           value={"Scholarship/Discount:"}
                           readOnly
@@ -1485,8 +1916,8 @@ const CertificateOfRegistration = forwardRef(
                       </td>
                     </tr>
 
-                    <tr>
-                      <td colSpan={5} style={{ fontSize: "50%" }}>
+                    <tr className="cor-student-info-row">
+                      <td colSpan={5} style={{ fontSize: "50%", padding: "0px 8px" }}>
                         <input
                           type="text"
                           value={"Email Address:"}
@@ -1498,13 +1929,15 @@ const CertificateOfRegistration = forwardRef(
                             fontSize: "12px",
                             width: "98%",
                             border: "none",
+                            height: "28px",
                             outline: "none",
                             background: "none",
                           }}
                         />
                       </td>
-                      <td colSpan={12} style={{ fontSize: "62.5%" }}>
+                      <td colSpan={12} style={{ fontSize: "62.5%", padding: "0px 8px" }}>
                         <input
+                          className="cor-left-value-wide"
                           type="text"
                           value={data[0]?.email || ""}
                           readOnly
@@ -1516,6 +1949,7 @@ const CertificateOfRegistration = forwardRef(
                             border: "none",
                             outline: "none",
                             background: "none",
+                            height: "28px",
                           }}
                         />
                       </td>
@@ -1523,9 +1957,9 @@ const CertificateOfRegistration = forwardRef(
 
                     {/*----------------------------------------------------------------------------------------------------------------------------------*/}
 
-                    <tr>
+                    <tr className="cor-subject-header-row">
                       <td
-                        colSpan={6}
+                        colSpan={5.5}
                         rowSpan={2}
                         style={{
                           color: "black",
@@ -1535,7 +1969,9 @@ const CertificateOfRegistration = forwardRef(
                           fontWeight: "bold",
 
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderTop: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
@@ -1550,7 +1986,7 @@ const CertificateOfRegistration = forwardRef(
                         </div>
                       </td>
                       <td
-                        colSpan={10}
+                        colSpan={11}
                         rowSpan={2}
                         style={{
                           color: "black",
@@ -1559,7 +1995,9 @@ const CertificateOfRegistration = forwardRef(
                           fontSize: "12px",
                           fontWeight: "bold",
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderTop: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                         }}
                       >
                         <div
@@ -1583,7 +2021,9 @@ const CertificateOfRegistration = forwardRef(
                           fontWeight: "bold",
 
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderTop: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
@@ -1609,7 +2049,9 @@ const CertificateOfRegistration = forwardRef(
                           fontWeight: "bold",
 
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderTop: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
@@ -1632,7 +2074,9 @@ const CertificateOfRegistration = forwardRef(
                           fontSize: "12px",
                           fontWeight: "bold",
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderTop: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
@@ -1656,7 +2100,9 @@ const CertificateOfRegistration = forwardRef(
                           fontSize: "12px",
                           fontWeight: "bold",
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderTop: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
@@ -1671,7 +2117,7 @@ const CertificateOfRegistration = forwardRef(
                         </div>
                       </td>
                     </tr>
-                    <tr>
+                    <tr className="cor-subject-subheader-row">
                       <td
                         colSpan={1}
                         style={{
@@ -1679,11 +2125,12 @@ const CertificateOfRegistration = forwardRef(
                           height: "0.1in",
                           fontSize: "50%",
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
-                        Lec
+                        <span className="cor-content-offset">Lec</span>
                       </td>
                       <td
                         colSpan={1}
@@ -1692,11 +2139,12 @@ const CertificateOfRegistration = forwardRef(
                           height: "0.1in",
                           fontSize: "50%",
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
-                        Lab
+                        <span className="cor-content-offset">Lab</span>
                       </td>
                       <td
                         colSpan={2}
@@ -1705,11 +2153,12 @@ const CertificateOfRegistration = forwardRef(
                           height: "0.1in",
                           fontSize: "50%",
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
-                        Credit
+                        <span className="cor-content-offset">Credit</span>
                       </td>
                       <td
                         colSpan={2}
@@ -1718,44 +2167,81 @@ const CertificateOfRegistration = forwardRef(
                           height: "0.1in",
                           fontSize: "50%",
                           backgroundColor: "gray",
-                          border: "1px solid black",
+                          borderRight: "1px solid black",
+                          borderBottom: "1px solid black",
                           textAlign: "center",
                         }}
                       >
-                        Tuition
+                        <span className="cor-content-offset">Tuition</span>
                       </td>
                     </tr>
                     {enrolled.map((item, index) => (
                       <tr key={index}>
-                        <td colSpan={6} style={{ border: "1px solid black" }}>
-                          <input
-                            type="text"
-                            value={item.course_code || ""}
-                            readOnly
+                        <td
+                          colSpan={5.5}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                            verticalAlign: "middle",
+                            padding: 0,
+                          }}
+                        >
+                          <div
                             style={{
-                              width: "98%",
-                              border: "none",
+                              width: "100%",
+                              minHeight: "22px",
+                              boxSizing: "border-box",
+                              color: "black",
                               textAlign: "center",
-                              background: "none",
+                              padding: "2px 3px",
                               fontSize: "12px",
+                              letterSpacing: "-0.5px",
+                              fontfamily: "Arial",
+                              lineHeight: "1.15",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "start",
                             }}
-                          />
+                          >
+                            <span style={{ marginTop: "-13px" }}>{item.course_code || ""}</span>
+                          </div>
                         </td>
-                        <td colSpan={10} style={{ border: "1px solid black" }}>
-                          <input
-                            type="text"
-                            value={item.course_description || ""}
-                            readOnly
+                        <td
+                          colSpan={11}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                            verticalAlign: "middle",
+                            padding: 0,
+                          }}
+                        >
+                          <div
                             style={{
-                              width: "98%",
-                              border: "none",
-                              background: "none",
-                              textAlign: "center",
-                              fontSize: "8px",
+                              width: "100%",
+                              minHeight: "22px",
+                              boxSizing: "border-box",
+                              color: "black",
+                              textAlign: "left",
+                              padding: "2px 5px",
+                              fontSize: "11px",
+                              lineHeight: "1.15",
+                              whiteSpace: "normal",
+                              overflowWrap: "break-word",
+                              wordBreak: "normal",
+                              display: "flex",
+                              alignItems: "center",
                             }}
-                          />
+                          >
+                            <span style={{ marginTop: "-13px" }}>{item.course_description || ""}</span>
+                          </div>
                         </td>
-                        <td colSpan={1} style={{ border: "1px solid black" }}>
+                        <td
+                          colSpan={1}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                          }}
+                        >
                           <input
                             type="text"
                             value={
@@ -1765,6 +2251,7 @@ const CertificateOfRegistration = forwardRef(
                             }
                             readOnly
                             style={{
+                              ...subjectCellContentOffset,
                               width: "98%",
                               border: "none",
                               background: "none",
@@ -1773,7 +2260,13 @@ const CertificateOfRegistration = forwardRef(
                             }}
                           />
                         </td>
-                        <td colSpan={1} style={{ border: "1px solid black" }}>
+                        <td
+                          colSpan={1}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                          }}
+                        >
                           <input
                             type="text"
                             value={
@@ -1783,6 +2276,7 @@ const CertificateOfRegistration = forwardRef(
                             }
                             readOnly
                             style={{
+                              ...subjectCellContentOffset,
                               width: "98%",
                               border: "none",
                               background: "none",
@@ -1791,7 +2285,13 @@ const CertificateOfRegistration = forwardRef(
                             }}
                           />
                         </td>
-                        <td colSpan={2} style={{ border: "1px solid black" }}>
+                        <td
+                          colSpan={2}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                          }}
+                        >
                           <input
                             type="text"
                             value={
@@ -1799,6 +2299,7 @@ const CertificateOfRegistration = forwardRef(
                               toWholeUnit(item.lab_unit)
                             }
                             style={{
+                              ...subjectCellContentOffset,
                               width: "98%",
                               border: "none",
                               background: "none",
@@ -1809,7 +2310,13 @@ const CertificateOfRegistration = forwardRef(
                           />
                         </td>
 
-                        <td colSpan={2} style={{ border: "1px solid black" }}>
+                        <td
+                          colSpan={2}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                          }}
+                        >
                           <input
                             type="text"
                             value={
@@ -1817,6 +2324,7 @@ const CertificateOfRegistration = forwardRef(
                               toWholeUnit(item.lab_unit)
                             }
                             style={{
+                              ...subjectCellContentOffset,
                               width: "98%",
                               border: "none",
                               background: "none",
@@ -1826,40 +2334,83 @@ const CertificateOfRegistration = forwardRef(
                             readOnly
                           />
                         </td>
-                        <td colSpan={4} style={{ border: "1px solid black" }}>
-                          <input
-                            type="text"
-                            value={item.description || ""}
-                            readOnly
+                        <td
+                          colSpan={4}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                            verticalAlign: "middle",
+                            padding: 0,
+                          }}
+                        >
+                          <div
                             style={{
-                              width: "98%",
-                              border: "none",
-                              background: "none",
+                              width: "100%",
+                              minHeight: "22px",
+                              boxSizing: "border-box",
+                              color: "black",
                               textAlign: "center",
-                              fontSize: "12px",
+                              padding: "2px 3px",
+                              fontSize: "10px",
+                              lineHeight: "1.15",
+                              whiteSpace: "normal",
+                              overflowWrap: "break-word",
+                              wordBreak: "normal",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
                             }}
-                          />
+                          >
+                            <span>{item.description || ""}</span>
+                          </div>
                         </td>
-                        <td colSpan={8} style={{ border: "1px solid black" }}>
-                          <input
-                            type="text"
-                            value={`${item.day_description} ${item.school_time_start}-${item.school_time_end}`}
-                            readOnly
+                        <td
+                          colSpan={8}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                            verticalAlign: "middle",
+                            padding: 0,
+                          }}
+                        >
+                          <div
                             style={{
-                              width: "98%",
-                              border: "none",
-                              background: "none",
+                              width: "100%",
+                              minHeight: "22px",
+                              boxSizing: "border-box",
+                              color: "black",
                               textAlign: "center",
+                              padding: "2px 4px",
                               fontSize: "8px",
+                              lineHeight: "1.15",
+                              whiteSpace: "normal",
+                              overflowWrap: "break-word",
+                              wordBreak: "normal",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
                             }}
-                          />
+                          >
+                            <span>
+                              {`${item.day_description || ""} ${
+                                item.school_time_start || ""
+                              }-${item.school_time_end || ""}`.trim()}
+                            </span>
+                          </div>
                         </td>
-                        <td colSpan={8} style={{ border: "1px solid black" }}>
+                        <td
+                          colSpan={8}
+                          style={{
+                            borderRight: "1px solid black",
+                            borderBottom: "1px solid black",
+                          }}
+                        >
                           <input
                             type="text"
                             value={`Prof. ${item.lname}`}
                             readOnly
                             style={{
+                              ...subjectCellContentOffset,
                               width: "98%",
                               border: "none",
                               background: "none",
@@ -1873,7 +2424,7 @@ const CertificateOfRegistration = forwardRef(
 
                     {/*----------------------------------------------------------------------------------------------------------------------------------*/}
 
-                    <tr>
+                    <tr className="cor-subject-total-row">
                       <td
                         colSpan={10}
                         style={{
@@ -1883,7 +2434,9 @@ const CertificateOfRegistration = forwardRef(
                           textAlign: "left",
                         }}
                       >
-                        <b>Note: Subject marked with "*" is Special Subject</b>
+                        <span className="cor-content-offset">
+                          <b>Note: Subject marked with "*" is Special Subject</b>
+                        </span>
                       </td>
                       <td
                         colSpan={6}
@@ -1893,7 +2446,9 @@ const CertificateOfRegistration = forwardRef(
                           textAlign: "CENTER",
                         }}
                       >
-                        <b>Total Unit(s)</b>
+                        <span className="cor-content-offset">
+                          <b>Total Unit(s)</b>
+                        </span>
                       </td>
                       <td
                         colSpan={1}
@@ -1904,7 +2459,9 @@ const CertificateOfRegistration = forwardRef(
                           textAlign: "center",
                         }}
                       >
-                        {totalCourseUnits}
+                        <span className="cor-content-offset">
+                          {totalCourseUnits}
+                        </span>
                       </td>
                       <td
                         colSpan={1}
@@ -1915,7 +2472,9 @@ const CertificateOfRegistration = forwardRef(
                           textAlign: "center",
                         }}
                       >
-                        {totalLabUnits}
+                        <span className="cor-content-offset">
+                          {totalLabUnits}
+                        </span>
                       </td>
                       <td
                         colSpan={2}
@@ -1926,7 +2485,9 @@ const CertificateOfRegistration = forwardRef(
                           textAlign: "center",
                         }}
                       >
-                        {totalCourseUnits + totalLabUnits}
+                        <span className="cor-content-offset">
+                          {totalCourseUnits + totalLabUnits}
+                        </span>
                       </td>
                       <td
                         colSpan={2}
@@ -1937,7 +2498,9 @@ const CertificateOfRegistration = forwardRef(
                           textAlign: "center",
                         }}
                       >
-                        {totalCombined}
+                        <span className="cor-content-offset">
+                          {totalCombined}
+                        </span>
                       </td>
 
                       <td
@@ -1959,18 +2522,126 @@ const CertificateOfRegistration = forwardRef(
                         }}
                       ></td>
                     </tr>
-                    <tr
-                      colSpan={12}
-                      style={{
-                        color: "white",
+                    <tr className="cor-fees-div-row">
+                      <td colSpan={42}>
+                        <div className="cor-fees-div-layout" style={{ marginTop: "5px", marginLeft: "7px" }}>
+                          <div className="cor-fees-left">
+                            <div className="cor-fees-title cor-assessed-title">
+                              <span style={{ marginTop: "-3px" }}>ASSESSED FEES</span>
+                            </div>
+                            <div className="cor-fees-body">
+                              <div className="cor-assessment-content">
+                                {corAssessedFeeRows.map((fee) => (
+                                  <div className="cor-fee-line" key={fee.label}>
+                                    <span>{fee.label}</span>
+                                    <span>{formatFee(fee.value)}</span>
+                                  </div>
+                                ))}
 
-                        height: "0.1in",
-                        fontSize: "62.5%",
-                        backgroundColor: "gray",
-                        textAlign: "center",
-                      }}
-                    ></tr>
-                    <tr>
+                                <div className="cor-assessment-list">
+                                  {corAssessmentRows.map((row) => (
+                                    <div
+                                      className="cor-assessment-line"
+                                      key={row.label}
+                                    >
+                                      <span>{row.label} :</span>
+                                      <span>{formatFee(row.value)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="cor-fees-title cor-schedule-title">
+                                <span style={{ marginTop: "-3px", width: "100%" }}>SCHEDULE OF PAYMENT</span>
+                              </div>
+                              <div className="cor-payment-grid">
+                                {[
+                                  "1st Payment/Due",
+                                  "2nd Payment/Due",
+                                  "3rd Payment/Due",
+                                ].map((label) => (
+                                  <div className="cor-payment-cell" key={label}>
+                                    <span style={{ marginTop: "-5px", width: "100%" }}>{label}</span>
+                                  </div>
+                                ))}
+                                {[0, 1, 2].map((item) => (
+                                  <div
+                                    className="cor-payment-cell cor-payment-value"
+                                    key={item}
+                                  >
+                                    <span style={{ marginTop: "-5px" }}>0.00</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="cor-payment-footer">
+                                <span className="cor-payment-label">Payment/Validation Date :</span>
+                                <span className="cor-line-value">
+                                  <span>{shortDate}</span>
+                                </span>
+                                <span className="cor-payment-label">Official Receipt :</span>
+                                <span className="cor-line-value">
+                                  <span>{officialReceiptValue}</span>
+                                </span>
+                              </div>
+                              <div className="cor-fee-stamp-row">
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="cor-fees-right">
+                            <div className="cor-refund-title">
+                              RULES OF REFUND
+                            </div>
+                            <div className="cor-refund-list">
+                              {corRefundRules.map((rule) => (
+                                <div key={rule}>{rule}</div>
+                              ))}
+                            </div>
+
+                            <div className="cor-pledge-title">
+                              PLEDGE UPON ADMISSION
+                            </div>
+                            <div className="cor-pledge-copy" >
+                              "As a student of EARIST, I do solemnly promise
+                              that I will comply with the rules and regulations
+                              of the Institution."
+                            </div>
+
+                            <div className="cor-student-signature">
+                              Student's Signature
+                            </div>
+
+                            <div className="cor-approval-row">
+                              <div className="cor-approved-block">
+                                APPROVED BY :
+                              </div>
+
+                              <div className="cor-registrar-signature">
+                                <div className="cor-registrar-signature-slot" style={{height: "60px"}}>
+                                  {showApprovedBySignature && (
+                                    <img
+                                      src={approvedBySignatureUrl}
+                                      crossOrigin="anonymous"
+                                      alt="Signature"
+                                      className="cor-registrar-signature-image"
+                                      onError={() =>
+                                        setApprovedBySignatureMissing(true)
+                                      }
+                                    />
+                                  )}
+                                </div>
+                                <div className="cor-registrar-name">
+                                  {approvedBy?.full_name || ""}
+                                </div>
+                                <div className="cor-registrar-line"></div>
+                                <div className="cor-registrar-role">Registrar</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr className="cor-fees-start">
                       <td
                         colSpan={20}
                         style={{
@@ -3129,38 +3800,6 @@ const CertificateOfRegistration = forwardRef(
                     </tr>
                     <tr>
                       <td
-                        colSpan={20}
-                        style={{
-                          margin: "0px",
-                          padding: "0px",
-                          fontSize: "63.5%",
-                          border: "1px solid black",
-                          backgroundColor: "gray",
-                          height: "auto",
-                        }}
-                      >
-                        <input
-                          type="text"
-                          value={"A S S E S S E D  F E E S"}
-                          readOnly
-                          style={{
-                            color: "black",
-                            fontWeight: "bold",
-                            margin: "0px",
-                            padding: "0px",
-                            textAlign: "center",
-                            width: "98%",
-                            border: "none",
-                            outline: "none",
-                            background: "none",
-                            lineHeight: "1",
-                          }}
-                        />
-                      </td>
-                    </tr>
-
-                    <tr>
-                      <td
                         colSpan={7}
                         style={{
                           fontSize: "62.5%",
@@ -3494,6 +4133,7 @@ const CertificateOfRegistration = forwardRef(
                 </table>
 
                 <table
+                  className="cor-lower-extra"
                   style={{
                     borderCollapse: "collapse",
                     fontFamily: "Arial",
@@ -3507,18 +4147,33 @@ const CertificateOfRegistration = forwardRef(
                   }}
                 >
                   <tbody>
-                    <tr>
-                      <td style={{ width: "50%", textAlign: "center" }}>
-                        {savedUnifast && (
+                    <tr className="cor-lower-extra-stamp-row">
+                      <td
+                        className="cor-free-tuition-cell"
+                        style={{ width: "50%", textAlign: "left", position: "relative" }}
+                      >
+                        {showFreeTuitionStamp && (
                           <img
                             src={FreeTuitionImage}
                             crossOrigin="anonymous"
                             alt="EARIST MIS FEE"
+                            className="cor-free-tuition-stamp"
                             style={{
-                              marginLeft: "75px",
-                              width: "200px", // Corrected unit
-                              height: "150px",
+                              position: "absolute",
+                              top: "40px",
+                              left: "-10px",
                             }}
+                          />
+                        )}
+                      </td>
+                      <td style={{ width: "50%", textAlign: "right" }}>
+                        {effectiveStudentNumber && !qrCodeMissing && (
+                          <img
+                            src={`${API_BASE_URL}/uploads/QrCodeGenerated/${effectiveStudentNumber}_qrcode.png`}
+                            crossOrigin="anonymous"
+                            alt="Student QR Code"
+                            className="cor-qr-code-img"
+                            onError={() => setQrCodeMissing(true)}
                           />
                         )}
                       </td>
@@ -3526,14 +4181,8 @@ const CertificateOfRegistration = forwardRef(
 
                     <tr>
                       <td
-                        colSpan={40}
-                        style={{
-                          height: "0.25in",
-                          fontSize: "15px",
-                          textAlign: "right",
-                          textAlign: "right",
-                          verticalAlign: "middle", // Centers vertically
-                        }}
+                        colSpan={2}
+                        className="cor-footer-time"
                       >
                         <input
                           type="text"
@@ -3541,11 +4190,16 @@ const CertificateOfRegistration = forwardRef(
                           readOnly
                           style={{
                             color: "black",
-                            textAlign: "right", // Centers text inside the input
+                            textAlign: "right",
                             width: "98%",
                             border: "none",
                             outline: "none",
                             background: "none",
+                            fontSize: "10px",
+                            letterSpacing: "-0.5px",
+                            fontFamily: "Arial",
+                            fontWeight: "bold",
+                            marginRight: "10px",
                           }}
                         />
                       </td>
@@ -3553,25 +4207,35 @@ const CertificateOfRegistration = forwardRef(
 
                     <tr>
                       <td
-                        colSpan={42}
+                        colSpan={2}
                         style={{
                           height: "0.2in",
                           fontSize: "72.5%",
                           backgroundColor: "gray",
                           color: "white",
+                          position: "relative",
                         }}
                       >
                         <b>
-                          <i
+                          <span
                             style={{
                               color: "black",
                               textAlign: "center",
                               display: "block",
+                              position: "absolute",
+                              fontSize: "10px",
+                              letterSpacing: "-0.5px",
+                              fontFamily: "Arial",
+                              fontWeight: "bold",
+                              top: "-2px",
+                              width: "100%",
+                              left: "50%",
+                              transform: "translateX(-50%)",
                             }}
                           >
                             KEEP THIS CERTIFICATE. YOU WILL BE REQUIRED TO
                             PRESENT THIS IN ALL YOUR DEALINGS WITH THE COLLEGE.
-                          </i>
+                          </span>
                         </b>
                       </td>
                     </tr>

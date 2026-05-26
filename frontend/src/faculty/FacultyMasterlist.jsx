@@ -31,6 +31,7 @@ const FacultyMasterList = () => {
   const location = useLocation();
   const { course_id, section_id, school_year_id, department_section_id } =
     location.state || {};
+  const initialDepartmentSectionId = department_section_id || section_id;
 
   const [titleColor, setTitleColor] = useState("#000000");
   const [subtitleColor, setSubtitleColor] = useState("#555555");
@@ -91,6 +92,9 @@ const FacultyMasterList = () => {
   const [selectedCourse, setSelectedCourse] = useState("");
   const [sectionAssignedTo, setSectionAssignedTo] = useState([]);
   const [selectedSection, setSelectedSection] = useState("");
+  const [masterlistBootstrapped, setMasterlistBootstrapped] = useState(false);
+  const skipNextSectionFetchRef = useRef(false);
+  const skipNextClassDetailsFetchRef = useRef(false);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState("Regular");
   const [sortOrder, setSortOrder] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -153,16 +157,39 @@ const FacultyMasterList = () => {
   useEffect(() => {
     if (profData.prof_id) {
       axios
-        .get(`${API_BASE_URL}/course_assigned_to/${profData.prof_id}`)
+        .get(`${API_BASE_URL}/api/faculty_masterlist_bootstrap/${profData.prof_id}`)
         .then((res) => {
-          setCoursesAssignedTo(res.data);
-          if (!course_id && res.data.length > 0) {
-            setSelectedCourse(res.data[0].course_id);
+          const data = res.data || {};
+          const active = data.activeSchoolYear || {};
+          const courses = Array.isArray(data.courses) ? data.courses : [];
+          const sections = Array.isArray(data.sections) ? data.sections : [];
+
+          setCoursesAssignedTo(courses);
+          setSectionAssignedTo(sections);
+          setClassListAndDetails(Array.isArray(data.classDetails) ? data.classDetails : []);
+
+          if (!school_year_id && active.year_id) setSelectedSchoolYear(active.year_id);
+          if (active.semester_id) setSelectedSchoolSemester(active.semester_id);
+          if (active.school_year_id) setSelectedActiveSchoolYear(active.school_year_id);
+
+          if (!course_id && courses.length > 0) {
+            setSelectedCourse(courses[0].course_id);
           }
+
+          if (!initialDepartmentSectionId && sections.length > 0) {
+            setSelectedSection(sections[0].department_section_id);
+          }
+
+          skipNextSectionFetchRef.current = true;
+          skipNextClassDetailsFetchRef.current = true;
+          setMasterlistBootstrapped(true);
         })
-        .catch((err) => console.error(err));
+        .catch((err) => {
+          console.error(err);
+          setMasterlistBootstrapped(true);
+        });
     }
-  }, [profData.prof_id]);
+  }, [profData.prof_id, course_id, initialDepartmentSectionId, school_year_id]);
 
   const filteredCourses = courseAssignedTo.filter((course) => {
     if (!selectedSchoolYear && !selectedSchoolSemester) return true;
@@ -180,11 +207,16 @@ const FacultyMasterList = () => {
 
   useEffect(() => {
     if (course_id) setSelectedCourse(course_id);
-    if (section_id) setSelectedSection(section_id);
+    if (initialDepartmentSectionId) setSelectedSection(initialDepartmentSectionId);
     if (school_year_id) setSelectedSchoolYear(school_year_id);
-  }, [course_id, section_id, school_year_id]);
+  }, [course_id, initialDepartmentSectionId, school_year_id]);
 
   useEffect(() => {
+    if (!masterlistBootstrapped) return;
+    if (skipNextSectionFetchRef.current) {
+      skipNextSectionFetchRef.current = false;
+      return;
+    }
     if (
       !profData.prof_id ||
       !selectedCourse ||
@@ -206,7 +238,7 @@ const FacultyMasterList = () => {
         }
       })
       .catch((err) => console.error(err));
-  }, [profData.prof_id, selectedCourse, selectedSchoolYear, selectedSchoolSemester]);
+  }, [masterlistBootstrapped, profData.prof_id, selectedCourse, selectedSchoolYear, selectedSchoolSemester]);
 
   useEffect(() => {
     axios
@@ -257,13 +289,18 @@ const FacultyMasterList = () => {
   }, [selectedSchoolYear, selectedSchoolSemester]);
 
   useEffect(() => {
+    if (!masterlistBootstrapped) return;
+    if (skipNextClassDetailsFetchRef.current) {
+      skipNextClassDetailsFetchRef.current = false;
+      return;
+    }
     if (profData.prof_id) {
       axios
         .get(`${API_BASE_URL}/get_class_details/${profData.prof_id}`)
         .then((res) => setClassListAndDetails(res.data))
         .catch((err) => console.error(err));
     }
-  }, [profData.prof_id]);
+  }, [masterlistBootstrapped, profData.prof_id]);
 
   const handleSchoolYearChange = (event) => {
     setSelectedSchoolYear(event.target.value);
@@ -349,6 +386,8 @@ const FacultyMasterList = () => {
       setSelectedSection(sectionId);
 
       // 5️⃣ Fetch students for this section
+      const detailsRes = await axios.get(`${API_BASE_URL}/get_class_details/${profData.prof_id}`);
+      setClassListAndDetails(detailsRes.data);
       setMessage("");
     } catch (err) {
       console.error("Error fetching past class data:", err);

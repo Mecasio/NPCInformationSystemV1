@@ -3209,7 +3209,7 @@ const SuperAdminApplicantDashboard1 = () => {
                     handleChange({
                       target: {
                         name: "emailAddress",
-                        value: finalValuep,
+                        value: finalValue,
                       },
                     });
                   }}

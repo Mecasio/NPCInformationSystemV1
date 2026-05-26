@@ -163,6 +163,8 @@ const StudentDashboard = ({ profileImage, setProfileImage }) => {
   const [studentAssessmentRows, setStudentAssessmentRows] = useState([]);
   const [gradeSummary, setGradeSummary] = useState({
     gwa: null,
+    generalAverage: null,
+    latestTermGwa: null,
     loading: true,
     message: "Loading GWA...",
   });
@@ -336,14 +338,26 @@ const StudentDashboard = ({ profileImage, setProfileImage }) => {
   };
 
   const fetchGradeSummary = async (id) => {
-    setGradeSummary({ gwa: null, loading: true, message: "Loading GWA..." });
+    setGradeSummary({
+      gwa: null,
+      generalAverage: null,
+      latestTermGwa: null,
+      loading: true,
+      message: "Loading GWA...",
+    });
 
     try {
       const res = await axios.get(`${API_BASE_URL}/api/student_grade/${id}`);
       const grades = Array.isArray(res.data) ? res.data : [];
 
       if (!grades.length) {
-        setGradeSummary({ gwa: null, loading: false, message: "No grades posted" });
+        setGradeSummary({
+          gwa: null,
+          generalAverage: null,
+          latestTermGwa: null,
+          loading: false,
+          message: "No grades posted",
+        });
         return;
       }
 
@@ -351,6 +365,8 @@ const StudentDashboard = ({ profileImage, setProfileImage }) => {
       if (balanceInfo.hasBalance) {
         setGradeSummary({
           gwa: null,
+          generalAverage: null,
+          latestTermGwa: null,
           loading: false,
           message: "Hidden due to balance",
         });
@@ -400,15 +416,40 @@ const StudentDashboard = ({ profileImage, setProfileImage }) => {
           row.gwa !== undefined &&
           row.gwa !== "",
       )?.gwa;
+      const postedTermGwas = sortedTerms
+        .map((term) => {
+          const termGwa = processedGrades.find(
+            (row) =>
+              `${row.year_level_description} ${row.semester_description}` === term &&
+              row.gwa !== null &&
+              row.gwa !== undefined &&
+              row.gwa !== "",
+          )?.gwa;
+          const numericGwa = Number(termGwa);
+          return Number.isFinite(numericGwa) ? numericGwa : null;
+        })
+        .filter((termGwa) => termGwa !== null);
+      const generalAverage = postedTermGwas.length
+        ? postedTermGwas.reduce((sum, termGwa) => sum + termGwa, 0) /
+          postedTermGwas.length
+        : null;
 
       setGradeSummary({
-        gwa: latestTermGwa ?? null,
+        gwa: generalAverage,
+        generalAverage,
+        latestTermGwa: latestTermGwa ?? null,
         loading: false,
-        message: latestTermGwa ? "" : "Not yet posted",
+        message: generalAverage ? "" : "Not yet posted",
       });
     } catch (error) {
       console.error("Failed to fetch grade summary:", error);
-      setGradeSummary({ gwa: null, loading: false, message: "Unable to load GWA" });
+      setGradeSummary({
+        gwa: null,
+        generalAverage: null,
+        latestTermGwa: null,
+        loading: false,
+        message: "Unable to load GWA",
+      });
     }
   };
 
@@ -869,7 +910,9 @@ const StudentDashboard = ({ profileImage, setProfileImage }) => {
     0,
   );
   const firstAnnouncement = announcements.find((item) => item.file_path) || announcements[0];
-  const statusText = String(personData.student_status || "Student");
+  const statusText = String(
+    personData.display_status || personData.student_status || "Student",
+  );
   const studentProgram =
     studentDetails.program_description ||
     personData.program_description ||
@@ -1108,12 +1151,22 @@ const StudentDashboard = ({ profileImage, setProfileImage }) => {
                   <Grid item xs={12} md={5.2} sx={{ p: 2.5, borderRight: { md: `1px solid ${softBorder}` } }}>
                     <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}><Box sx={iconBoxSx}><StarBorder /></Box><Typography sx={{ fontSize: 18, fontWeight: 700 }}>Grade Summary</Typography></Stack>
                     <Box sx={{ border: "1px solid #f0cfcd", borderRadius: "8px", p: 2.5, textAlign: "center", mb: 2.5 }}>
-                      <Typography sx={{ fontSize: 16 }}>GWA</Typography>
+                      <Typography sx={{ fontSize: 16 }}>Overall GWA</Typography>
                       <Typography sx={{ fontSize: 42, color: maroon, fontWeight: 800 }}>
                         {gradeSummary.gwa !== null && gradeSummary.gwa !== undefined
                           ? Number(gradeSummary.gwa).toFixed(3)
-                          : "N/A"}
+                          : "0.00"}
                       </Typography>
+                      <Divider sx={{ my: 1.5 }} />
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Typography sx={{ color: "text.secondary", fontSize: 13 }}>Latest Term GWA</Typography>
+                        <Typography sx={{ color: maroon, fontSize: 18, fontWeight: 800 }}>
+                          {gradeSummary.latestTermGwa !== null &&
+                          gradeSummary.latestTermGwa !== undefined
+                            ? Number(gradeSummary.latestTermGwa).toFixed(3)
+                            : "0.00"}
+                        </Typography>
+                      </Stack>
                       {gradeSummary.message && (
                         <Typography sx={{ mt: 0.5, color: "text.secondary", fontSize: 12 }}>
                           {gradeSummary.message}

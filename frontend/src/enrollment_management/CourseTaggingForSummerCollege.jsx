@@ -1156,7 +1156,7 @@ const CourseTaggingForSummerCollege = () => {
             <Table size="small" sx={{ minWidth: 700 }}>
               <TableHead sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>
                 <TableRow>
-                  {["Code", "Lec", "Lab", "Units", "Section", "Day", "Time", "Room", "Faculty", "No.", "Remove Subject"].map((h) => (
+                  {["Code", "Lec", "Lab", "Units", "Section", "Day", "Time", "Room", "Faculty", "Remove Subject"].map((h) => (
                     <StyledTh key={h} headerColor={headerColor}>{h}</StyledTh>
                   ))}
                 </TableRow>
@@ -1181,13 +1181,6 @@ const CourseTaggingForSummerCollege = () => {
                     <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{cleanDisplayValue(e.room_description, "—")}</StyledTd>
                     <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>{cleanDisplayValue(e.lname) ? `Prof. ${cleanDisplayValue(e.lname)}` : "—"}</StyledTd>
                     <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>
-                      <Chip
-                        label={e.number_of_enrolled}
-                        size="small"
-                        sx={{ fontSize: "10px", height: 20, backgroundColor: TOKEN.accentSoft, color: TOKEN.accent, fontWeight: 700 }}
-                      />
-                    </StyledTd>
-                    <StyledTd sx={{ border: `1px solid ${borderColor}`, textAlign: "center" }}>
                       <Button
                         variant="contained"
                         onClick={() => deleteFromCart(e.id)}
@@ -1209,7 +1202,7 @@ const CourseTaggingForSummerCollege = () => {
                 ))}
                 {enrolled.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={11} sx={{ textAlign: "center", color: TOKEN.textLight, py: 4, fontSize: "13px" }}>
+                    <TableCell colSpan={10} sx={{ textAlign: "center", color: TOKEN.textLight, py: 4, fontSize: "13px" }}>
                       No subjects enrolled yet.
                     </TableCell>
                   </TableRow>

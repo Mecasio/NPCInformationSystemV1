@@ -2743,23 +2743,17 @@ const SuperAdminStudentDashboard1 = () => {
                   name="emailAddress"
                   required
                   value={person.emailAddress || ""}
-                  placeholder="Enter your Gmail address"
+                  placeholder="Enter email address"
                   onBlur={() => handleUpdate(person)}
                   error={!!errors.emailAddress}
                   helperText={
                     errors.emailAddress ? "This field is required." : ""
                   }
                   onChange={(e) => {
-                    let value = e.target.value.replace(/\s/g, "");
-
-                    value = value.replace(/@.*/, "");
-
-                    const finalValue = value === "" ? "" : value + "@gmail.com";
-
                     handleChange({
                       target: {
                         name: "emailAddress",
-                        value: finalValue,
+                        value: e.target.value.replace(/\s/g, ""),
                       },
                     });
                   }}

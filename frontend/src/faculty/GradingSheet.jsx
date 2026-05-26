@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
 import { SettingsContext } from "../App";
 import "../styles/TempStyles.css";
 import axios from "axios";
@@ -23,7 +23,8 @@ import {
   Paper,
   Snackbar,
   Alert,
-  Autocomplete,
+  ClickAwayListener,
+  Popper,
 } from "@mui/material";
 import API_BASE_URL from "../apiConfig";
 import { useLocation } from "react-router-dom";
@@ -34,6 +35,164 @@ import {
   setRemarksFromRatingDynamic,
 } from "../utils/gradeConversion";
 import { postAuditEvent } from "../utils/auditEvents";
+
+// ── Defined OUTSIDE the component so the reference never changes ──────────────
+const gradeOptions = [
+  ...Array.from({ length: 41 }, (_, i) => (100 - i).toString()),
+  "INC",
+  "DROP",
+];
+
+function validateGradeInput(rawValue) {
+  if (rawValue === null || rawValue === undefined) return "";
+
+  const value = String(rawValue).trim().toUpperCase();
+  if (value === "") return "";
+
+  if (/^INC/.test(value)) return "INC";
+  if (/^(DRP|DROP)/.test(value)) return "DROP";
+
+  if (/^[A-Z]+$/.test(value)) {
+    return "";
+  }
+
+  if (!/^\d{1,3}$/.test(value)) {
+    return "";
+  }
+
+  let num = Number(value);
+  if (isNaN(num)) return "";
+
+  if (num > 100) num = 100;
+  if (num < 60) return "";
+
+  return String(num);
+}
+
+const displayGradeValue = (rawValue) => {
+  const normalized = String(rawValue ?? "").trim().toUpperCase();
+  if (["", "0", "0.00", "NULL", "UNDEFINED"].includes(normalized)) return "";
+  if (normalized === "DRP") return "DROP";
+  return rawValue ?? "";
+};
+
+// ── GradeSelect outside + React.memo = no unmount/remount on parent re-render ─
+const GradeSelect = React.memo(({ value, onChange, placeholder = "" }) => {
+  const [inputValue, setInputValue] = useState(displayGradeValue(value));
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      setInputValue(displayGradeValue(value));
+    }
+  }, [value, open]);
+
+  const commitValue = useCallback(
+    (rawValue) => {
+      const validated = validateGradeInput(rawValue);
+      setInputValue(validated);
+      if (validated !== displayGradeValue(value)) {
+        onChange(validated);
+      }
+    },
+    [value, onChange],
+  );
+
+  return (
+    <ClickAwayListener
+      onClickAway={() => {
+        if (open) {
+          setOpen(false);
+          commitValue(inputValue);
+        }
+      }}
+    >
+      <Box sx={{ width: 80 }}>
+        <TextField
+          ref={anchorRef}
+          placeholder={placeholder}
+          size="small"
+          variant="outlined"
+          value={inputValue}
+          onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
+          onChange={(event) => {
+            const nextValue = event.target.value.toUpperCase();
+            setInputValue(nextValue);
+          }}
+          onBlur={() => {
+            setOpen(false);
+            commitValue(inputValue);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              setOpen(false);
+              commitValue(inputValue);
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+          inputProps={{
+            style: {
+              textAlign: "center",
+              fontFamily: "Poppins",
+            },
+          }}
+          sx={{ width: "80px" }}
+        />
+        <Popper
+          open={open}
+          anchorEl={anchorRef.current}
+          placement="bottom-start"
+          sx={{ zIndex: 1500 }}
+        >
+          <Paper
+            sx={{
+              mt: 0.5,
+              width: 96,
+              maxHeight: 220,
+              overflowY: "auto",
+              border: "1px solid #D1D5DB",
+              boxShadow: "0 8px 20px rgba(0,0,0,0.16)",
+            }}
+          >
+            {gradeOptions.map((option) => (
+              <Box
+                key={option}
+                component="button"
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setOpen(false);
+                  commitValue(option);
+                }}
+                sx={{
+                  width: "100%",
+                  border: 0,
+                  background: "white",
+                  py: 0.75,
+                  px: 1,
+                  fontFamily: "Poppins",
+                  fontSize: 13,
+                  textAlign: "center",
+                  cursor: "pointer",
+                  "&:hover": {
+                    backgroundColor: "#F3F4F6",
+                  },
+                }}
+              >
+                {option}
+              </Box>
+            ))}
+          </Paper>
+        </Popper>
+      </Box>
+    </ClickAwayListener>
+  );
+});
+GradeSelect.displayName = "GradeSelect";
 
 const GradingSheet = () => {
   const settings = useContext(SettingsContext);
@@ -95,6 +254,10 @@ const GradingSheet = () => {
   const [selectedActiveSchoolYear, setSelectedActiveSchoolYear] = useState("");
   const [selectedSectionID, setSelectedSectionID] = useState("");
   const [selectedCourse, setSelectedCourse] = useState("");
+  const [gradingSheetBootstrapped, setGradingSheetBootstrapped] = useState(false);
+  const skipNextStudentFetchRef = useRef(false);
+  const skipNextSectionFetchRef = useRef(false);
+  const autoSaveTimersRef = useRef({});
   const [selectedFile, setSelectedFile] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [sortOrder, setSortOrder] = useState("asc");
@@ -113,6 +276,11 @@ const GradingSheet = () => {
   }, [course_id, section_id, school_year_id]);
 
   useEffect(() => {
+    if (!gradingSheetBootstrapped) return;
+    if (skipNextStudentFetchRef.current) {
+      skipNextStudentFetchRef.current = false;
+      return;
+    }
     if (
       profData.prof_id &&
       selectedCourse &&
@@ -126,6 +294,7 @@ const GradingSheet = () => {
     selectedCourse,
     selectedSectionID,
     selectedActiveSchoolYear,
+    gradingSheetBootstrapped,
   ]);
 
   useEffect(() => {
@@ -179,15 +348,58 @@ const GradingSheet = () => {
   };
 
   useEffect(() => {
-    if (profData.prof_id) {
-      axios
-        .get(`${API_BASE_URL}/course_assigned_to/${profData.prof_id}`)
-        .then((res) => setCoursesAssignedTo(res.data))
-        .catch((err) => console.error(err));
-    }
+    if (!profData.prof_id) return;
+    axios
+      .get(`${API_BASE_URL}/api/grading_sheet_bootstrap/${profData.prof_id}`, {
+        params: {
+          course_id: course_id || undefined,
+          department_section_id: section_id || undefined,
+          active_school_year_id: school_year_id || undefined,
+        },
+      })
+      .then((res) => {
+        const data = res.data || {};
+        const active = data.activeSchoolYear || {};
+        const courses = Array.isArray(data.courses) ? data.courses : [];
+        const sections = Array.isArray(data.sections) ? data.sections : [];
+        const selectedCourseId = data.selectedCourse || courses[0]?.course_id || "";
+        const selectedSectionId = data.selectedSection || sections[0]?.department_section_id || "";
+        const bootstrapStudents = Array.isArray(data.students) ? data.students : [];
+
+        setCoursesAssignedTo(courses);
+        setSectionsHandle(sections);
+        setSelectedCourse(selectedCourseId);
+        setSelectedSectionID(selectedSectionId);
+
+        if (active.year_id) setSelectedSchoolYear(active.year_id);
+        if (active.semester_id) setSelectedSchoolSemester(active.semester_id);
+        if (active.school_year_id) setSelectedActiveSchoolYear(active.school_year_id);
+
+        setStudents(
+          bootstrapStudents.map((student) => ({
+            ...withInitialSaveStatus(student),
+            selectedCourse: selectedCourseId,
+            department_section_id: selectedSectionId,
+          })),
+        );
+        setMessage(bootstrapStudents.length ? "" : "There are no currently enrolled students in this subject and section");
+
+        skipNextStudentFetchRef.current = true;
+        skipNextSectionFetchRef.current = true;
+        setGradingSheetBootstrapped(true);
+      })
+      .catch((err) => {
+        console.error(err);
+        setGradingSheetBootstrapped(true);
+      });
   }, [profData.prof_id]);
 
   useEffect(() => {
+    if (!gradingSheetBootstrapped) return;
+    if (skipNextSectionFetchRef.current) {
+      skipNextSectionFetchRef.current = false;
+      return;
+    }
     if (profData.prof_id && selectedCourse && selectedActiveSchoolYear) {
       axios
         .get(
@@ -200,9 +412,11 @@ const GradingSheet = () => {
               String(section.department_section_id) ===
               String(selectedSectionID),
           );
-          if (selectedSectionID && !selectedSectionExists) {
-            setSelectedSectionID("");
+          if (res.data.length > 0 && !selectedSectionExists) {
+            setSelectedSectionID(res.data[0].department_section_id);
+          } else if (res.data.length === 0) {
             setStudents([]);
+            setSelectedSectionID("");
           }
         })
         .catch((err) => console.error(err));
@@ -211,7 +425,7 @@ const GradingSheet = () => {
     profData.prof_id,
     selectedCourse,
     selectedActiveSchoolYear,
-    selectedSectionID,
+    gradingSheetBootstrapped,
   ]);
 
   useEffect(() => {
@@ -236,6 +450,7 @@ const GradingSheet = () => {
   }, []);
 
   useEffect(() => {
+    if (school_year_id) return;
     axios
       .get(`${API_BASE_URL}/active_school_year`)
       .then((res) => {
@@ -272,6 +487,12 @@ const GradingSheet = () => {
     }
   }, [selectedSchoolYear, selectedSchoolSemester]);
 
+  // Cleanup auto-save timers on unmount
+  useEffect(() => {
+    const timers = autoSaveTimersRef.current;
+    return () => Object.values(timers).forEach(clearTimeout);
+  }, []);
+
   const handleFetchStudents = async (department_section_id) => {
     if (!profData.prof_id) return;
     if (!selectedActiveSchoolYear) return;
@@ -290,7 +511,7 @@ const GradingSheet = () => {
           );
         } else {
           const studentsWithSubject = data.map((student) => ({
-            ...student,
+            ...withInitialSaveStatus(student),
             selectedCourse,
             department_section_id,
           }));
@@ -309,42 +530,46 @@ const GradingSheet = () => {
   };
 
   const [searchQuery, setSearchQuery] = useState("");
-  const filteredStudents = students
-    .filter((s) => {
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
 
-      return (
-        s.student_number?.toString().includes(q) ||
-        s.first_name?.toLowerCase().includes(q) ||
-        s.middle_name?.toLowerCase().includes(q) ||
-        s.last_name?.toLowerCase().includes(q)
-      );
-    })
-    .sort((a, b) => {
-      if (!searchQuery) return 0;
-      const q = searchQuery.toLowerCase();
+  // useMemo so filtering/sorting only reruns when students or searchQuery change
+  const filteredStudents = useMemo(() =>
+    students
+      .filter((s) => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+          s.student_number?.toString().includes(q) ||
+          s.first_name?.toLowerCase().includes(q) ||
+          s.middle_name?.toLowerCase().includes(q) ||
+          s.last_name?.toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        if (!searchQuery) return 0;
+        const q = searchQuery.toLowerCase();
 
-      const aMatch =
-        a.student_number?.toString().includes(q) ||
-        a.first_name?.toLowerCase().includes(q) ||
-        a.middle_name?.toLowerCase().includes(q) ||
-        a.last_name?.toLowerCase().includes(q);
+        const aMatch =
+          a.student_number?.toString().includes(q) ||
+          a.first_name?.toLowerCase().includes(q) ||
+          a.middle_name?.toLowerCase().includes(q) ||
+          a.last_name?.toLowerCase().includes(q);
 
-      const bMatch =
-        b.student_number?.toString().includes(q) ||
-        b.first_name?.toLowerCase().includes(q) ||
-        b.middle_name?.toLowerCase().includes(q) ||
-        b.last_name?.toLowerCase().includes(q);
+        const bMatch =
+          b.student_number?.toString().includes(q) ||
+          b.first_name?.toLowerCase().includes(q) ||
+          b.middle_name?.toLowerCase().includes(q) ||
+          b.last_name?.toLowerCase().includes(q);
 
-      if (aMatch && !bMatch) return -1;
-      if (!aMatch && bMatch) return 1;
-      return 0;
-    });
+        if (aMatch && !bMatch) return -1;
+        if (!aMatch && bMatch) return 1;
+        return 0;
+      }),
+    [students, searchQuery],
+  );
 
   const findPastClass = async () => {
     try {
-      if (!profData.prof_id || !selectedSchoolYear || !selectedSchoolSemester) {
+      if (!profData.prof_id || !selectedSchoolYear || !selectedSchoolSemester || !selectedActiveSchoolYear) {
         setSnack({
           open: true,
           message: "Please select School Year and Semester first!",
@@ -353,11 +578,20 @@ const GradingSheet = () => {
         return;
       }
 
-      const courseRes = await axios.get(
-        `${API_BASE_URL}/course_assigned_to/${profData.prof_id}/${selectedSchoolYear}/${selectedSchoolSemester}`,
-      );
-      const courses = courseRes.data;
-      setCoursesAssignedTo(courses);
+      const res = await axios.get(`${API_BASE_URL}/api/grading_sheet_bootstrap/${profData.prof_id}`, {
+        params: {
+          course_id: selectedCourse || undefined,
+          department_section_id: selectedSectionID || undefined,
+          active_school_year_id: selectedActiveSchoolYear,
+        },
+      });
+
+      const data = res.data || {};
+      const courses = Array.isArray(data.courses) ? data.courses : [];
+      const sections = Array.isArray(data.sections) ? data.sections : [];
+      const selectedCourseId = data.selectedCourse || courses[0]?.course_id || "";
+      const selectedSectionId = data.selectedSection || sections[0]?.department_section_id || "";
+      const fetchedStudents = Array.isArray(data.students) ? data.students : [];
 
       if (courses.length === 0) {
         setSectionsHandle([]);
@@ -370,16 +604,7 @@ const GradingSheet = () => {
         return;
       }
 
-      const selectedCourseExists = courses.some(
-        (course) => String(course.course_id) === String(selectedCourse),
-      );
-      const courseId = selectedCourseExists ? selectedCourse : courses[0].course_id;
-      setSelectedCourse(courseId);
-
-      const sectionRes = await axios.get(
-        `${API_BASE_URL}/handle_section_of/${profData.prof_id}/${courseId}/${selectedActiveSchoolYear}`,
-      );
-      const sections = sectionRes.data;
+      setCoursesAssignedTo(courses);
       setSectionsHandle(sections);
 
       if (sections.length === 0) {
@@ -392,16 +617,18 @@ const GradingSheet = () => {
         return;
       }
 
-      const selectedSectionExists = sections.some(
-        (section) =>
-          String(section.department_section_id) === String(selectedSectionID),
+      skipNextSectionFetchRef.current = true;
+      skipNextStudentFetchRef.current = true;
+      setSelectedCourse(selectedCourseId);
+      setSelectedSectionID(selectedSectionId);
+      setStudents(
+        fetchedStudents.map((student) => ({
+          ...withInitialSaveStatus(student),
+          selectedCourse: selectedCourseId,
+          department_section_id: selectedSectionId,
+        })),
       );
-      const sectionId = selectedSectionExists
-        ? selectedSectionID
-        : sections[0].department_section_id;
-      setSelectedSectionID(sectionId);
-
-      handleFetchStudents(sectionId);
+      setMessage(fetchedStudents.length ? "" : "There are no currently enrolled students in this subject and section");
     } catch (err) {
       console.error("Error fetching past class data:", err);
       setSnack({
@@ -412,47 +639,64 @@ const GradingSheet = () => {
     }
   };
 
-  const gradeStats = filteredStudents.reduce(
-    (acc, student) => {
-      switch (student.en_remarks) {
-        case 0:
-          acc.noGrade += 1;
-          break;
-        case 1:
-          acc.passed += 1;
-          break;
-        case 2:
-          acc.failed += 1;
-          break;
-        case 3:
-          acc.incomplete += 1;
-          break;
-        case 4:
-          acc.drop += 1;
-          break;
-        default:
-          break;
-      }
-      return acc;
-    },
-    { noGrade: 0, passed: 0, failed: 0, incomplete: 0, drop: 0 },
+  // useMemo so stats only recompute when filteredStudents changes
+  const gradeStats = useMemo(() =>
+    filteredStudents.reduce(
+      (acc, student) => {
+        switch (student.en_remarks) {
+          case 0: acc.noGrade += 1; break;
+          case 1: acc.passed += 1; break;
+          case 2: acc.failed += 1; break;
+          case 3: acc.incomplete += 1; break;
+          case 4: acc.drop += 1; break;
+          default: break;
+        }
+        return acc;
+      },
+      { noGrade: 0, passed: 0, failed: 0, incomplete: 0, drop: 0 },
+    ),
+    [filteredStudents],
   );
 
-  const gradeOptions = [
-    ...Array.from({ length: 41 }, (_, i) => (100 - i).toString()),
-    "INC",
-    "DRP",
-  ];
+  const hasGrades = useMemo(() =>
+    students?.some((s) => {
+      const mid = Number(s.midterm);
+      const fin = Number(s.finals);
+      return !isNaN(mid) && mid !== 0 && !isNaN(fin) && fin !== 0;
+    }),
+    [students],
+  );
 
-  const hasGrades = students?.some((s) => {
-    const mid = Number(s.midterm);
-    const fin = Number(s.finals);
+  const sanitizeFilePart = (value, fallback = "") => {
+    const cleaned = String(value ?? "")
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, "")
+      .replace(/\s+/g, "");
+    return cleaned || fallback;
+  };
 
-    return !isNaN(mid) && mid !== 0 && !isNaN(fin) && fin !== 0;
-  });
+  const getGradingSheetBaseName = (record = students[0] || filteredStudents[0] || {}) => {
+    const curriculumYear = sanitizeFilePart(record.year_level_description);
+    const program = sanitizeFilePart(record.program_code, "Program");
+    const section = sanitizeFilePart(record.section_description, "Section");
+    return `${curriculumYear}${program}${section}_GradingSheet`;
+  };
+
+  const sortStudentsByNameAsc = (list = []) =>
+    [...list].sort((a, b) => {
+      const lastNameCompare = String(a.last_name || "").localeCompare(String(b.last_name || ""), undefined, { sensitivity: "base" });
+      if (lastNameCompare !== 0) return lastNameCompare;
+
+      const firstNameCompare = String(a.first_name || "").localeCompare(String(b.first_name || ""), undefined, { sensitivity: "base" });
+      if (firstNameCompare !== 0) return firstNameCompare;
+
+      return String(a.student_number || "").localeCompare(String(b.student_number || ""), undefined, { numeric: true });
+    });
 
   const exportToExcel = async () => {
-    if (!students || students.length === 0) {
+    const exportStudents = sortStudentsByNameAsc(filteredStudents.length ? filteredStudents : students);
+
+    if (!exportStudents || exportStudents.length === 0) {
       setSnack({
         open: true,
         message: "No Students .",
@@ -461,10 +705,11 @@ const GradingSheet = () => {
       return;
     }
 
-    const firstRecord = students[0];
+    const firstRecord = exportStudents[0];
     const program = firstRecord.program_code || "PROGRAM";
     const section = firstRecord.section_description || "SECTION";
     const sheetTitle = `${program} - ${section} GRADING SHEET`;
+    const fileName = `${getGradingSheetBaseName(firstRecord)}.xlsx`;
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([]);
@@ -513,7 +758,7 @@ const GradingSheet = () => {
     ];
     XLSX.utils.sheet_add_aoa(ws, headers, { origin: "A3" });
 
-    const dataRows = students.map((s, index) => [
+    const dataRows = exportStudents.map((s, index) => [
       index + 1,
       s.student_number,
       `${s.last_name}, ${s.first_name} ${s.middle_name || ""}`.trim(),
@@ -562,15 +807,15 @@ const GradingSheet = () => {
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     saveAs(
       new Blob([wbout], { type: "application/octet-stream" }),
-      "GradingSheet.xlsx",
+      fileName,
     );
 
     try {
       await postAuditEvent(
         "faculty_grading_sheet_exported",
         buildClassAuditDetails(firstRecord, {
-          file_name: "GradingSheet.xlsx",
-          student_count: students.length,
+          file_name: fileName,
+          student_count: exportStudents.length,
         }),
       );
     } catch (err) {
@@ -578,124 +823,38 @@ const GradingSheet = () => {
     }
   };
 
-  function validateGradeInput(rawValue) {
-    if (rawValue === null || rawValue === undefined) return "";
+  const setRemarksFromRating = useCallback(
+    (rating) => setRemarksFromRatingDynamic(rating, gradeConversions),
+    [gradeConversions],
+  );
 
-    let value = String(rawValue).trim().toUpperCase();
-
-    if (/^INC/.test(value)) return "INC";
-    if (/^DRP/.test(value)) return "DRP";
-
-    if (/^[A-Z]+$/.test(value)) {
-      return "60";
-    }
-
-    if (!/^\d{1,3}$/.test(value)) {
-      return "60";
-    }
-
-    let num = Number(value);
-    if (isNaN(num)) return "60";
-
-    if (num > 100) num = 100;
-    if (num < 60) num = 60;
-
-    return String(num);
-  }
-
-  const setRemarksFromRating = (rating) =>
-    setRemarksFromRatingDynamic(rating, gradeConversions);
-
-  const GradeSelect = ({ value, onChange, placeholder = "" }) => {
-    const [inputValue, setInputValue] = React.useState(value ?? "");
-
-    useEffect(() => {
-      setInputValue(value ?? "");
-    }, [value]);
-
-    return (
-      <Autocomplete
-        freeSolo
-        disableClearable
-        options={gradeOptions}
-        inputValue={inputValue}
-        value={inputValue}
-        onInputChange={(event, newInputValue, reason) => {
-          if (reason === "input") {
-            setInputValue(newInputValue.toUpperCase());
-          }
-        }}
-        onChange={(event, newValue) => {
-          if (newValue !== null) {
-            const validated = validateGradeInput(newValue);
-            setInputValue(validated);
-            onChange(validated);
-          }
-        }}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            placeholder={placeholder}
-            size="small"
-            variant="outlined"
-            onBlur={() => {
-              const validated = validateGradeInput(inputValue);
-              setInputValue(validated);
-              onChange(validated);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                const validated = validateGradeInput(inputValue);
-                setInputValue(validated);
-                onChange(validated);
-              }
-            }}
-            sx={{ textAlign: "center", width: "80px" }}
-          />
-        )}
-        sx={{
-          "& .MuiAutocomplete-inputRoot": {
-            textAlign: "center",
-            fontFamily: "Poppins",
-          },
-        }}
-      />
-    );
+  const hasGradeValue = (value) => {
+    if (value === null || value === undefined) return false;
+    const normalized = String(value).trim();
+    return normalized !== "" && normalized !== "0" && normalized !== "0.00";
   };
 
-  const handleChanges = (index, field, value) => {
-    const updatedStudents = [...students];
-    updatedStudents[index][field] = value?.toUpperCase();
+  const isDropGrade = (value) =>
+    ["DRP", "DROP"].includes(String(value ?? "").trim().toUpperCase());
 
-    if (value?.toUpperCase() === "DRP") {
-      if (field === "midterm") {
-        updatedStudents[index].finals = "DRP";
-      } else if (field === "finals") {
-        updatedStudents[index].midterm = "DRP";
-      }
-    }
+  const isIncompleteGrade = (value) =>
+    String(value ?? "").trim().toUpperCase() === "INC";
 
-    const midterm = updatedStudents[index].midterm;
-    const finals = updatedStudents[index].finals;
+  const getGradeCompletionStatus = (student) => {
+    const hasMidterm = hasGradeValue(student.midterm);
+    const hasFinals = hasGradeValue(student.finals);
 
-    updatedStudents[index].final_grade = finals;
-
-    if (midterm === "DRP" || finals === "DRP") {
-      updatedStudents[index].en_remarks = 4;
-    } else if (midterm === "INC" || finals === "INC") {
-      updatedStudents[index].en_remarks = 3;
-    } else if (finals === "0.00") {
-      updatedStudents[index].en_remarks = 0;
-    } else {
-      const rating = convertRawToRating(finals);
-      updatedStudents[index].en_remarks = setRemarksFromRating(rating);
-    }
-
-    setStudents(updatedStudents);
+    if (student._saveStatus === "failed") return "Not Yet Graded";
+    if (student._saveStatus !== "saved") return "Not Yet Graded";
+    if (hasMidterm && hasFinals) return "Graded";
+    if (hasMidterm || hasFinals) return "Partial Graded";
+    return "Not Yet Graded";
   };
 
-  const addStudentInfo = async (student) => {
+  const getStudentKey = (student) =>
+    `${student.student_number}-${student.course_id || selectedCourse}-${student.department_section_id || selectedSectionID}`;
+
+  const saveStudentGrade = useCallback(async (student, { silent = true } = {}) => {
     try {
       const response = await fetch(`${API_BASE_URL}/add_grades`, {
         method: "PUT",
@@ -710,35 +869,119 @@ const GradingSheet = () => {
         }),
       });
 
-      if (response.ok) {
-        setLoading(false);
-        try {
-          await postAuditEvent("faculty_grading_sheet_grade_submitted", {
-            ...buildGradeAuditDetails(student),
-          });
-        } catch (err) {
-          console.error("Error inserting audit log");
-        }
+      if (!response.ok) {
+        throw new Error("Failed to save grades");
+      }
 
+      setStudents((prev) =>
+        prev.map((row) =>
+          getStudentKey(row) === getStudentKey(student)
+            ? { ...row, _saveStatus: "saved" }
+            : row,
+        ),
+      );
+
+      if (!silent) {
         setSnack({
           open: true,
           message: "Grades saved successfully!",
           severity: "success",
         });
-      } else {
-        setLoading(false);
+      }
+
+      try {
+        await postAuditEvent("faculty_grading_sheet_grade_submitted", {
+          ...buildGradeAuditDetails(student),
+        });
+      } catch (err) {
+        console.error("Error inserting audit log");
+      }
+    } catch {
+      setStudents((prev) =>
+        prev.map((row) =>
+          getStudentKey(row) === getStudentKey(student)
+            ? { ...row, _saveStatus: "failed" }
+            : row,
+        ),
+      );
+
+      if (!silent) {
         setSnack({
           open: true,
-          message: "Failed to saved grades!",
+          message: "Failed to save grades!",
           severity: "error",
         });
       }
-    } catch (error) {
-      setLoading(false);
     }
-  };
+  }, [selectedCourse]);
+
+  const withInitialSaveStatus = (student) => ({
+    ...student,
+    _saveStatus: hasGradeValue(student.midterm) || hasGradeValue(student.finals)
+      ? "saved"
+      : "idle",
+  });
+
+  const scheduleAutoSave = useCallback((student) => {
+    const key = getStudentKey(student);
+    clearTimeout(autoSaveTimersRef.current[key]);
+    autoSaveTimersRef.current[key] = setTimeout(() => {
+      saveStudentGrade(student);
+      delete autoSaveTimersRef.current[key];
+    }, 600);
+  }, [saveStudentGrade]);
+
+  // useCallback + functional setState so the reference stays stable across renders.
+  // This is what allows React.memo on GradeSelect to actually skip re-renders.
+  const handleChanges = useCallback((student, field, value) => {
+    setStudents((prev) => {
+      const index = prev.findIndex((row) => getStudentKey(row) === getStudentKey(student));
+      if (index === -1) return prev;
+
+      const updatedStudents = [...prev];
+      updatedStudents[index] = { ...updatedStudents[index], [field]: value?.toUpperCase() };
+
+      if (isDropGrade(value)) {
+        if (field === "midterm") {
+          updatedStudents[index].finals = "DROP";
+        } else if (field === "finals") {
+          updatedStudents[index].midterm = "DROP";
+        }
+      }
+
+      const midterm = updatedStudents[index].midterm;
+      const finals = updatedStudents[index].finals;
+
+      updatedStudents[index].final_grade = finals;
+
+      if (isDropGrade(midterm) || isDropGrade(finals)) {
+        updatedStudents[index].en_remarks = 4;
+      } else if (isIncompleteGrade(midterm) || isIncompleteGrade(finals)) {
+        updatedStudents[index].en_remarks = 3;
+      } else if (!hasGradeValue(finals)) {
+        updatedStudents[index].en_remarks = 0;
+      } else {
+        const rating = convertRawToRatingDynamic(finals, gradeConversions);
+        updatedStudents[index].en_remarks = setRemarksFromRatingDynamic(rating, gradeConversions);
+      }
+
+      updatedStudents[index]._saveStatus = "saving";
+      scheduleAutoSave(updatedStudents[index]);
+      return updatedStudents;
+    });
+  }, [gradeConversions, scheduleAutoSave]);
 
   const remarkConversion = (student) => {
+    if (
+      !isDropGrade(student.midterm) &&
+      !isDropGrade(student.finals) &&
+      !isIncompleteGrade(student.midterm) &&
+      !isIncompleteGrade(student.finals) &&
+      !hasGradeValue(student.finals)
+    ) {
+      return "ONGOING";
+    }
+
     if (student.en_remarks === 0) {
       return "ONGOING";
     } else if (student.en_remarks === 1) {
@@ -831,6 +1074,8 @@ const GradingSheet = () => {
 
   const handleSelectCourseChange = (event) => {
     setSelectedCourse(event.target.value);
+    setSelectedSectionID("");
+    setStudents([]);
   };
 
   const handleSnackClose = (_, reason) => {
@@ -949,6 +1194,11 @@ const GradingSheet = () => {
   )
     ? selectedCourse
     : "";
+  const selectedSectionValue = sectionsHandle.some(
+    (section) => String(section.department_section_id) === String(selectedSectionID),
+  )
+    ? selectedSectionID
+    : "";
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -986,9 +1236,14 @@ const GradingSheet = () => {
     }
 
     setLoading(true);
+    setStudents((prev) =>
+      prev.map((student) => ({ ...student, _saveStatus: "saving" })),
+    );
     let successCount = 0;
     let failCount = 0;
     const successfulStudents = [];
+    const successfulKeys = new Set();
+    const failedKeys = new Set();
 
     try {
       const promises = students.map(async (student) => {
@@ -1009,15 +1264,26 @@ const GradingSheet = () => {
           if (response.ok) {
             successCount++;
             successfulStudents.push(student);
+            successfulKeys.add(getStudentKey(student));
           } else {
             failCount++;
+            failedKeys.add(getStudentKey(student));
           }
         } catch (error) {
           failCount++;
+          failedKeys.add(getStudentKey(student));
         }
       });
 
       await Promise.all(promises);
+      setStudents((prev) =>
+        prev.map((student) => {
+          const key = getStudentKey(student);
+          if (successfulKeys.has(key)) return { ...student, _saveStatus: "saved" };
+          if (failedKeys.has(key)) return { ...student, _saveStatus: "failed" };
+          return student;
+        }),
+      );
 
       try {
         await Promise.all(
@@ -1066,6 +1332,8 @@ const GradingSheet = () => {
   const divToPrintRef = useRef();
 
   const printDiv = () => {
+    const printTitle = getGradingSheetBaseName();
+    const printDate = new Date().toLocaleString();
     const iframe = document.createElement("iframe");
     iframe.style.position = "absolute";
     iframe.style.width = "0";
@@ -1079,11 +1347,32 @@ const GradingSheet = () => {
     doc.write(`
         <html>
           <head>
-            <title>Print</title>
+            <title>${printTitle}</title>
             <style>
+              @page {
+                margin: 0;
+                size: auto;
+              }
+
+              html,
               body {
                 font-family: Arial;
-                margin: 0.5in;
+                margin: 0;
+              }
+              .print-content {
+                padding: 0.5in 0.5in 0.75in;
+              }
+              .print-footer {
+                position: fixed;
+                left: 0.5in;
+                right: 0.5in;
+                bottom: 0.25in;
+                display: flex;
+                justify-content: space-between;
+                font-size: 9px;
+              }
+              .print-footer .page-number::after {
+                content: counter(page) "/" counter(pages);
               }
               table {
                 width: 100%;
@@ -1107,13 +1396,16 @@ const GradingSheet = () => {
                 text-transform: uppercase;
                 letter-spacing: 2px;
               }
-              @media print {
-                @page { margin: 0.5in; size: auto; }
-              }
             </style>
           </head>
           <body>
-            ${divToPrintRef.current.innerHTML}
+            <div class="print-content">
+              ${divToPrintRef.current.innerHTML}
+            </div>
+            <div class="print-footer">
+              <span>${printDate}</span>
+              <span class="page-number"></span>
+            </div>
           </body>
         </html>
       `);
@@ -1599,63 +1891,35 @@ const GradingSheet = () => {
               <Typography fontSize={13} sx={{ minWidth: "109px" }}>
                 Section:{" "}
               </Typography>
-              {!selectedCourse ? (
-                <Typography
-                  variant="body1"
-                  color="text.secondary"
-                  sx={{
-                    width: "100%",
-                    fontStyle: "italic",
-                    border: "rgba(0,0,0,0.2) 1px solid",
-                    marginTop: "1rem",
-                    padding: "2rem",
-                    textAlign: "center",
-                    borderRadius: "5px",
-                  }}
+              <FormControl fullWidth sx={{ mt: 1, minWidth: 320 }}>
+                <InputLabel id="section-select-label">Section</InputLabel>
+                <Select
+                  labelId="section-select-label"
+                  label="Section"
+                  value={selectedSectionValue}
+                  onChange={(event) => setSelectedSectionID(event.target.value)}
+                  disabled={!selectedCourse || sectionsHandle.length === 0}
                 >
-                  Please select a course first
-                </Typography>
-              ) : (
-                <div className="temp-container" style={{ marginTop: "2rem" }}>
-                  {sectionsHandle.length > 0 ? (
+                  {!selectedCourse ? (
+                    <MenuItem value="" disabled>
+                      Please select a course first
+                    </MenuItem>
+                  ) : sectionsHandle.length > 0 ? (
                     sectionsHandle.map((section) => (
-                      <Button
-                        variant="contained"
-                        sx={{
-                          backgroundColor: mainButtonColor,
-                          mb: 2,
-                          mr: 2,
-                          height: "45px",
-                          width: "180px",
-                          "&:hover": { backgroundColor: "#800000" },
-                        }}
-                        onClick={() => {
-                          setSelectedSectionID(section.department_section_id);
-                          handleFetchStudents(section.department_section_id);
-                        }}
+                      <MenuItem
                         key={section.department_section_id}
+                        value={section.department_section_id}
                       >
                         {section.program_code}-{section.section_description}
-                      </Button>
+                      </MenuItem>
                     ))
                   ) : (
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{
-                        fontStyle: "italic",
-                        border: "rgba(0,0,0,0.2) 1px solid",
-                        marginTop: "1rem",
-                        padding: "2rem",
-                        textAlign: "center",
-                        borderRadius: "5px",
-                      }}
-                    >
+                    <MenuItem value="" disabled>
                       No sections available for this course
-                    </Typography>
+                    </MenuItem>
                   )}
-                </div>
-              )}
+                </Select>
+              </FormControl>
             </Box>
           </Box>
           <Box
@@ -1906,7 +2170,7 @@ const GradingSheet = () => {
                   border: `1px solid ${borderColor}`,
                 }}
               >
-                Action
+                Status
               </TableCell>
             </TableRow>
           </TableHead>
@@ -1928,7 +2192,7 @@ const GradingSheet = () => {
               </TableRow>
             ) : (
               filteredStudents.map((student, index) => (
-                <TableRow key={index}>
+                <TableRow key={getStudentKey(student)}>
                   <TableCell
                     sx={{
                       textAlign: "center",
@@ -1962,7 +2226,7 @@ const GradingSheet = () => {
                   <TableCell sx={{ border: `1px solid ${borderColor}` }}>
                     <GradeSelect
                       value={student.midterm}
-                      onChange={(val) => handleChanges(index, "midterm", val)}
+                      onChange={(val) => handleChanges(student, "midterm", val)}
                       placeholder="Enter grade"
                     />
                   </TableCell>
@@ -1977,7 +2241,7 @@ const GradingSheet = () => {
                   <TableCell sx={{ border: `1px solid ${borderColor}` }}>
                     <GradeSelect
                       value={student.finals}
-                      onChange={(val) => handleChanges(index, "finals", val)}
+                      onChange={(val) => handleChanges(student, "finals", val)}
                       placeholder="Enter grade"
                     />
                   </TableCell>
@@ -2018,18 +2282,25 @@ const GradingSheet = () => {
                       border: `1px solid ${borderColor}`,
                     }}
                   >
-                    <Button
+                    <Box
+                      component="span"
                       sx={{
-                        height: "40px",
-                        width: "100px",
-                        backgroundColor: mainButtonColor,
-                        "&:hover": { backgroundColor: "" },
-                        color: "white",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        minWidth: 110,
+                        height: 32,
+                        px: 1,
+                        borderRadius: "6px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: getGradeCompletionStatus(student) === "Graded" ? "#1B5E20" : getGradeCompletionStatus(student) === "Partial Graded" ? "#7A4F00" : "#6B7280",
+                        backgroundColor: getGradeCompletionStatus(student) === "Graded" ? "#E8F5E9" : getGradeCompletionStatus(student) === "Partial Graded" ? "#FFF8E1" : "#F3F4F6",
+                        border: `1px solid ${getGradeCompletionStatus(student) === "Graded" ? "#A5D6A7" : getGradeCompletionStatus(student) === "Partial Graded" ? "#FFE082" : "#D1D5DB"}`,
                       }}
-                      onClick={() => addStudentInfo(student)}
                     >
-                      Save
-                    </Button>
+                      {getGradeCompletionStatus(student)}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))
@@ -2039,13 +2310,10 @@ const GradingSheet = () => {
       </TableContainer>
 
       <div style={{ display: "none" }}>
-        <div ref={divToPrintRef} style={{ margin: "0.5in" }}>
+        <div ref={divToPrintRef}>
           <style>
             {`
               @media print {
-                body {
-                  margin: 0.5in;
-                }
                 table {
                   page-break-inside: auto;
                 }
@@ -2313,7 +2581,6 @@ const GradingSheet = () => {
                   Credit Units:
                 </td>
 
-                {/* ✅ FIX: Safely compute credit units to avoid NaN */}
                 <td
                   colSpan={1}
                   style={{
@@ -2699,7 +2966,6 @@ const GradingSheet = () => {
                 }}
               >
                 <div style={{ textAlign: "center", width: "45%" }}>
-                  {/* ✅ FIX: Guard against null/empty mname before accessing index [0] */}
                   <div style={{ fontSize: "12px" }}>
                     {profData.fname}{" "}
                     {profData.mname ? `${profData.mname[0]}.` : ""}{" "}

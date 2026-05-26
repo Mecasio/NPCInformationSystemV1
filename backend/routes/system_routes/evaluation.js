@@ -217,6 +217,51 @@ router.get("/get_questions", async (req, res) => {
   }
 });
 
+router.post("/reuse_questions", CanCreate, async (req, res) => {
+  const { source_school_year_id, target_school_year_id } = req.body;
+
+  if (!source_school_year_id || !target_school_year_id) {
+    return res.status(400).send({ message: "Source and target school year are required." });
+  }
+
+  if (String(source_school_year_id) === String(target_school_year_id)) {
+    return res.status(400).send({ message: "Source and target semester must be different." });
+  }
+
+  try {
+    const [result] = await db3.query(
+      `
+      INSERT INTO evaluation_table (school_year_id, question_id)
+      SELECT ?, et.question_id
+      FROM evaluation_table AS et
+      WHERE et.school_year_id = ?
+        AND NOT EXISTS (
+          SELECT 1
+          FROM evaluation_table AS existing
+          WHERE existing.school_year_id = ?
+            AND existing.question_id = et.question_id
+        )
+      `,
+      [target_school_year_id, source_school_year_id, target_school_year_id],
+    );
+
+    const { actorId, roleLabel } = getActorLabel(req);
+    await insertEvaluationAuditLog({
+      req,
+      action: "EVALUATION_QUESTION_REUSE",
+      message: `${roleLabel} (${actorId}) reused ${result.affectedRows} evaluation question(s) from school year ${source_school_year_id} to ${target_school_year_id}.`,
+    });
+
+    res.status(200).send({
+      message: `${result.affectedRows} question(s) reused successfully.`,
+      inserted: result.affectedRows,
+    });
+  } catch (err) {
+    console.error("Database / Server Error:", err);
+    res.status(500).send({ message: "Database / Server Error", error: err });
+  }
+});
+
 //11/29/2025 UPDATE
 router.put("/update_question/:id", CanEdit, async (req, res) => {
   const { category, question, choice1, choice2, choice3, choice4, choice5 } =
@@ -298,14 +343,24 @@ router.delete("/delete_question/:id", CanDelete, async (req, res) => {
 
 //11/29/2025 UPDATE
 router.get("/get_questions_for_evaluation", async (req, res) => {
+  const { school_year_id } = req.query;
+
   try {
+    const params = [];
+    let whereClause = "WHERE sy.astatus = 1";
+
+    if (school_year_id) {
+      whereClause = "WHERE sy.id = ?";
+      params.push(school_year_id);
+    }
+
     const [rows] = await db3.query(`
       SELECT qt.category, qct.title, qct.description as meaning, qt.question_description, qt.first_choice, qt.second_choice, qt.third_choice, qt.fourth_choice, qt.fifth_choice, qt.id AS question_id, sy.year_id, sy.semester_id, sy.id as school_year, et.created_at FROM question_table AS qt
       INNER JOIN evaluation_table AS et ON qt.id = et.question_id
       INNER JOIN active_school_year_table AS sy ON et.school_year_id = sy.id
       INNER JOIN question_category_table AS qct ON qt.category = qct.id
-      WHERE sy.astatus = 1 ORDER BY qt.id ASC;
-    `);
+      ${whereClause} ORDER BY qt.id ASC;
+    `, params);
     console.log(rows);
     res.status(200).send(rows);
   } catch (err) {
